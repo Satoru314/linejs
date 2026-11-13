@@ -82,6 +82,23 @@ test("commands can be enumerated by category", async () => {
 	);
 });
 
+test("commands --json marks unreachable commands in read-only mode", async () => {
+	const output = capture();
+	const result = await runCli(["commands", "--json"], {
+		...output.options,
+		env: { ...output.options.env, LINEJS_READONLY: "1" },
+	});
+	assert.equal(result.exitCode, 0);
+	const parsed = JSON.parse(output.stdout.join(""));
+	const byName = new Map(
+		parsed.commands.map((command: { name: string }) => [command.name, command]),
+	) as Map<string, { readOnly: boolean; mcpExecutable: boolean }>;
+	assert.equal(byName.get("chats recent")?.readOnly, true);
+	assert.equal(byName.get("chats recent")?.mcpExecutable, true);
+	assert.equal(byName.get("chats send")?.readOnly, false);
+	assert.equal(byName.get("chats send")?.mcpExecutable, false);
+});
+
 test("non-auth commands reuse the cached profile without getProfile", async () => {
 	const dir = await mkdtemp(join(tmpdir(), "linejs-cli-cache-"));
 	try {

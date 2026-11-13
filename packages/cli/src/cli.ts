@@ -112,7 +112,7 @@ async function runMetaCommand(
 	argv: readonly string[],
 	output: Output,
 	json: boolean,
-	options: { help: boolean; version: boolean },
+	options: { help: boolean; version: boolean; readOnlyMode: boolean },
 ): Promise<RunCliResult> {
 	if (options.version) {
 		output.writeLine(VERSION);
@@ -131,7 +131,9 @@ async function runMetaCommand(
 		}
 		if (target.command) {
 			if (helpJson) {
-				output.writeLine(JSON.stringify(commandsMetadata([target.command])[0], null, 2));
+				output.writeLine(
+					JSON.stringify(commandsMetadata([target.command], options.readOnlyMode)[0], null, 2),
+				);
 			} else {
 				output.writeLine(commandHelp(target.command));
 			}
@@ -144,7 +146,7 @@ async function runMetaCommand(
 					JSON.stringify(
 						{
 							group: target.group,
-							commands: commandsMetadata(entries),
+							commands: commandsMetadata(entries, options.readOnlyMode),
 						},
 						null,
 						2,
@@ -156,7 +158,13 @@ async function runMetaCommand(
 			return { exitCode: 0 };
 		}
 		if (helpJson) {
-			output.writeLine(JSON.stringify({ version: VERSION, commands: commandsMetadata() }, null, 2));
+			output.writeLine(
+				JSON.stringify(
+					{ version: VERSION, commands: commandsMetadata(allCommands, options.readOnlyMode) },
+					null,
+					2,
+				),
+			);
 		} else {
 			output.writeLine(rootHelp());
 		}
@@ -181,7 +189,7 @@ async function runMetaCommand(
 				JSON.stringify(
 					{
 						commandCount: commands.length,
-						commands: commandsMetadata(commands),
+						commands: commandsMetadata(commands, options.readOnlyMode),
 					},
 					null,
 					2,
@@ -194,7 +202,13 @@ async function runMetaCommand(
 	}
 
 	if (json) {
-		output.writeLine(JSON.stringify({ version: VERSION, commands: commandsMetadata() }, null, 2));
+		output.writeLine(
+			JSON.stringify(
+				{ version: VERSION, commands: commandsMetadata(allCommands, options.readOnlyMode) },
+				null,
+				2,
+			),
+		);
 	} else {
 		output.writeLine(rootHelp());
 	}
@@ -207,6 +221,7 @@ export async function runCli(
 ): Promise<RunCliResult> {
 	const env = options.env ?? process.env;
 	const cwd = options.cwd ?? process.cwd();
+	const readOnlyMode = isReadOnlyMode(env);
 	const stdout = options.stdout ?? ((chunk: string) => process.stdout.write(chunk));
 	const stderr = options.stderr ?? ((chunk: string) => process.stderr.write(chunk));
 	const jsonHint = detectJson(argv);
@@ -230,12 +245,14 @@ export async function runCli(
 			return await runMetaCommand([], output, Boolean(leadingParsed.options.json), {
 				help: true,
 				version: false,
+				readOnlyMode,
 			});
 		}
 		if (rest[0] === "help" || rest[0] === "commands") {
 			const result = await runMetaCommand(rest, output, Boolean(leadingParsed.options.json), {
 				help: rest[0] === "help",
 				version: false,
+				readOnlyMode,
 			});
 			return result;
 		}
@@ -268,7 +285,7 @@ export async function runCli(
 					JSON.stringify(
 						{
 							group: resolution.group ?? null,
-							commands: commandsMetadata(entries),
+							commands: commandsMetadata(entries, readOnlyMode),
 						},
 						null,
 						2,
@@ -295,11 +312,13 @@ export async function runCli(
 		}
 		if (parsed.options.help) {
 			output.writeLine(
-				json ? JSON.stringify(commandsMetadata([command])[0], null, 2) : commandHelp(command),
+				json
+					? JSON.stringify(commandsMetadata([command], readOnlyMode)[0], null, 2)
+					: commandHelp(command),
 			);
 			return { exitCode: 0 };
 		}
-		assertReadOnlyCommand(command, isReadOnlyMode(env));
+		assertReadOnlyCommand(command, readOnlyMode);
 
 		let profile;
 		try {
