@@ -1,60 +1,55 @@
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import {
+	fetchTalkHistory,
 	fetchTalkMessages,
 	fetchUserTalkMessages,
 	isUserMid,
 	userChatSummary,
 } from "../src/commands/shared.ts";
+import { CliError } from "../src/errors.ts";
 import type { Client } from "@evex-dev/linejs";
 
-function userClient() {
+const RAW_MESSAGES = [
+	{
+		id: "111",
+		deliveredTime: 200,
+		contentType: "NONE",
+		contentMetadata: {},
+		text: "hello",
+	},
+	{
+		id: "222",
+		deliveredTime: 201,
+		contentType: "NONE",
+		contentMetadata: {},
+		text: "world",
+	},
+];
+
+function historyClient(options: { messages?: unknown[]; error?: Error } = {}) {
 	const calls: string[] = [];
 	const client = {
 		getChat: async () => {
 			calls.push("getChat");
-			throw new Error("getChat must not be called for user mids");
+			throw new Error("getChat must not be called");
 		},
 		base: {
 			talk: {
 				async getMessageBoxes() {
-					return {
-						messageBoxes: [
-							{
-								id: "u-user",
-								lastDeliveredMessageId: {
-									deliveredTime: 200,
-									messageId: 300,
-								},
-							},
-						],
-					};
+					calls.push("getMessageBoxes");
+					throw new Error("getMessageBoxes must not be called");
 				},
-				async getPreviousMessagesV2WithRequest({ request }: never) {
-					const req = request as {
-						messageBoxId: string;
-						endMessageId: { messageId: unknown; deliveredTime: unknown };
-						messagesCount: number;
-					};
-					assert.equal(req.messageBoxId, "u-user");
-					assert.equal(req.messagesCount, 10);
-					assert.deepEqual(req.endMessageId, { messageId: 300, deliveredTime: 200 });
-					return [
-						{
-							id: "111",
-							deliveredTime: 200,
-							contentType: "NONE",
-							contentMetadata: {},
-							text: "hello",
-						},
-						{
-							id: "222",
-							deliveredTime: 201,
-							contentType: "NONE",
-							contentMetadata: {},
-							text: "world",
-						},
-					];
+				async getRecentMessagesV2({
+					messageBoxId,
+					messagesCount,
+				}: {
+					messageBoxId: string;
+					messagesCount: number;
+				}) {
+					calls.push(`getRecentMessagesV2:${messageBoxId}:${messagesCount}`);
+					if (options.error) throw options.error;
+					return options.messages ?? RAW_MESSAGES;
 				},
 			},
 		},
@@ -73,51 +68,51 @@ test("userChatSummary reports a USER chat", () => {
 	assert.deepEqual(userChatSummary("u123"), { mid: "u123", type: "USER" });
 });
 
-test("fetchUserTalkMessages uses the message-box path", async () => {
-	const { client, calls } = userClient();
-	const messages = await fetchUserTalkMessages(client, "u-user", 10);
-	assert.equal(calls.length, 0);
-	assert.equal(messages.length, 2);
-	assert.equal(messages[0].raw.id, "111");
-	assert.equal(messages[1].raw.id, "222");
+test("1:1 history uses getRecentMessagesV2 without reading the inbox", async () => {
+	const { client, calls } = historyClient();
+	const history = await fetchTalkHistory(client, "u-user", 10);
+	assert.deepEqual(calls, ["getRecentMessagesV2:u-user:10"]);
+	assert.equal(history.historyAvailable, true);
+	assert.equal(history.messages.length, 2);
+	assert.equal(history.messages[0]!.raw.id, "111");
+	assert.equal(history.messages[1]!.raw.id, "222");
 });
 
-test("fetchUserTalkMessages throws NOT_FOUND for an unknown box", async () => {
-	const { client } = userClient();
-	await assert.rejects(() => fetchUserTalkMessages(client, "u-missing", 10), /was not found/);
+test("empty 1:1 history is not an error and reports historyAvailable false", async () => {
+	const { client } = historyClient({ messages: [] });
+	const history = await fetchTalkHistory(client, "u-quiet", 10);
+	assert.deepEqual(history.messages, []);
+	assert.equal(history.historyAvailable, false);
 });
 
-test("fetchTalkMessages routes user mids away from getChat", async () => {
-	const { client, calls } = userClient();
-	const messages = await fetchTalkMessages(client, "u-user", 10);
-	assert.equal(calls.length, 0);
-	assert.equal(messages.length, 2);
+test("API errors are preserved as CliError without an open-the-app hint", async () => {
+	const { client } = historyClient({ error: new Error("Message box u-missing was not found") });
+	await assert.rejects(
+		() => fetchTalkHistory(client, "u-missing", 10),
+		(error) =>
+			error instanceof CliError &&
+			error.code === "LINEJS_ERROR" &&
+			error.message === "Message box u-missing was not found" &&
+			!String((error.details as { hint?: string } | undefined)?.hint ?? "").includes(
+				"official client",
+			),
+	);
 });
 
-test("fetchTalkMessages keeps the getChat path for group mids", async () => {
-	let fetchedLimit = 0;
-	const client = {
-		async getChat(chatMid: string) {
-			assert.equal(chatMid, "c-group");
-			return {
-				async fetchMessages(limit: number) {
-					fetchedLimit = limit;
-					return [{ raw: { id: "999" } }];
-				},
-			};
-		},
-		base: {
-			talk: {
-				async getMessageBoxes(): Promise<never> {
-					throw new Error("getMessageBoxes must not be called for group mids");
-				},
-				async getPreviousMessagesV2WithRequest(): Promise<never> {
-					throw new Error("getPreviousMessagesV2WithRequest must not be called for group mids");
-				},
-			},
-		},
-	} as never as Client;
-	const messages = await fetchTalkMessages(client, "c-group", 5);
-	assert.equal(fetchedLimit, 5);
-	assert.equal(messages.length, 1);
+test("fetchUserTalkMessages and fetchTalkMessages keep their array API", async () => {
+	const { client } = historyClient();
+	const userMessages = await fetchUserTalkMessages(client, "u-user", 10);
+	assert.equal(userMessages.length, 2);
+	const groupMessages = await fetchTalkMessages(client, "c-group", 5);
+	assert.equal(groupMessages.length, 2);
+});
+
+test("group and room mids use the same getRecentMessagesV2 path", async () => {
+	const group = historyClient();
+	await fetchTalkHistory(group.client, "c-group", 5);
+	assert.deepEqual(group.calls, ["getRecentMessagesV2:c-group:5"]);
+
+	const room = historyClient();
+	await fetchTalkHistory(room.client, "r-room", 50);
+	assert.deepEqual(room.calls, ["getRecentMessagesV2:r-room:50"]);
 });

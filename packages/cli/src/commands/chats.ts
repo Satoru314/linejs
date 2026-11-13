@@ -8,7 +8,7 @@ import {
 	chatSummary,
 	type ContactProfile,
 	fetchContactProfiles,
-	fetchUserTalkMessages,
+	fetchTalkHistory,
 	isUserMid,
 	limitOption,
 	requireJsonObject,
@@ -210,18 +210,22 @@ const messagesCommand: CommandSpec = {
 		const limit = context.getNumber("limit") ?? 20;
 		if (limit <= 0) throw new UsageError("--limit must be positive");
 		return await withClient(context, async ({ client }) => {
+			const history = await fetchTalkHistory(client, chatMid, limit);
+			const messages = history.messages.map((message) =>
+				talkMessageSummary(message, context.json),
+			);
 			if (isUserMid(chatMid)) {
-				const messages = await fetchUserTalkMessages(client, chatMid, limit);
 				return {
 					chat: userChatSummary(chatMid),
-					messages: messages.map((message) => talkMessageSummary(message, context.json)),
+					messages,
+					historyAvailable: history.historyAvailable,
 				};
 			}
 			const chat = await client.getChat(chatMid);
-			const messages = await chat.fetchMessages(limit);
 			return {
 				chat: chatSummary(chat),
-				messages: messages.map((message) => talkMessageSummary(message, context.json)),
+				messages,
+				historyAvailable: history.historyAvailable,
 			};
 		});
 	},

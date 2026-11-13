@@ -188,6 +188,14 @@ line api call obs downloadObjectForService \
 Use `line api methods <service>` to discover method names. This is the escape
 hatch for newer APIs that do not have a dedicated command yet.
 
+### Reading old messages
+
+`chats messages` reads directly from the message box with `getRecentMessagesV2`
+instead of searching the active inbox first. This also works for 1:1 chats that
+are not in `getMessageBoxes()`. An empty result is not an error: the JSON output
+contains `"historyAvailable": false` because LINE may not expose older messages
+through this API. Real missing-chat or permission errors are returned as-is.
+
 ### Listening
 
 ```sh

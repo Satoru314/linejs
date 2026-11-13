@@ -9,7 +9,7 @@ import {
 	type User,
 } from "@evex-dev/linejs";
 import type { CommandContext } from "../context.ts";
-import { CliError, UsageError } from "../errors.ts";
+import { CliError, UsageError, errorMessage } from "../errors.ts";
 import type { OptionSpec } from "../args.ts";
 import { humanValue } from "../output.ts";
 
@@ -67,6 +67,11 @@ export function userChatSummary(mid: string): Record<string, unknown> {
 		mid,
 		type: "USER",
 	};
+}
+
+export interface TalkHistory {
+	messages: TalkMessage[];
+	historyAvailable: boolean;
 }
 
 export interface ContactProfile {
@@ -139,54 +144,58 @@ export function contactProfileSummary(profile: ContactProfile): Record<string, u
 }
 
 /**
+ * Fetch recent talk messages for a talk mid via `getRecentMessagesV2`.
+ *
+ * Do not list message boxes first: `getMessageBoxes` only returns the active
+ * inbox, so old 1:1 chats (and groups/rooms) look "not found" even though they
+ * exist. `getRecentMessagesV2` accepts the chat mid directly. An empty result
+ * is reported as `historyAvailable: false` instead of an error.
+ */
+export async function fetchTalkHistory(
+	client: Client,
+	chatMid: string,
+	limit: number,
+): Promise<TalkHistory> {
+	let raws: Awaited<ReturnType<typeof client.base.talk.getRecentMessagesV2>>;
+	try {
+		raws = await client.base.talk.getRecentMessagesV2({
+			messageBoxId: chatMid,
+			messagesCount: limit,
+		});
+	} catch (error) {
+		throw new CliError("LINEJS_ERROR", errorMessage(error), {
+			cause: error,
+			details: { chatMid },
+		});
+	}
+	const messages = await Promise.all(
+		(raws ?? []).map((raw) => TalkMessage.fromRawTalk(raw, client)),
+	);
+	return { messages, historyAvailable: messages.length > 0 };
+}
+
+/**
  * Fetch recent talk messages for a 1:1 (user) mid via the message-box APIs.
- * Group/room mids keep using `Chat.fetchMessages`; this is the user-mid
- * counterpart that `client.getChat` cannot serve.
+ * Kept as a small wrapper for callers that only need the message array.
  */
 export async function fetchUserTalkMessages(
 	client: Client,
 	userMid: string,
 	limit: number,
 ): Promise<TalkMessage[]> {
-	const boxes = await client.base.talk.getMessageBoxes({
-		messageBoxListRequest: {},
-	});
-	const box = boxes.messageBoxes.find((entry) => entry.id === userMid);
-	if (!box) {
-		throw new CliError("NOT_FOUND", `Message box ${userMid} was not found`, {
-			details: {
-				chatMid: userMid,
-				hint: "Open the 1:1 chat once in an official client, then retry.",
-			},
-		});
-	}
-	const raws = await client.base.talk.getPreviousMessagesV2WithRequest({
-		request: {
-			messageBoxId: box.id,
-			endMessageId: {
-				messageId: box.lastDeliveredMessageId.messageId,
-				deliveredTime: box.lastDeliveredMessageId.deliveredTime,
-			},
-			messagesCount: limit,
-		},
-	});
-	return await Promise.all(raws.map((raw) => TalkMessage.fromRawTalk(raw, client)));
+	return (await fetchTalkHistory(client, userMid, limit)).messages;
 }
 
 /**
- * Fetch recent talk messages for any talk mid. User (1:1) mids go through
- * the message-box path; group/room mids keep the existing `getChat` path.
+ * Fetch recent talk messages for any talk mid. All kinds use
+ * `getRecentMessagesV2`; there is no inbox-list fallback.
  */
 export async function fetchTalkMessages(
 	client: Client,
 	chatMid: string,
 	limit: number,
 ): Promise<TalkMessage[]> {
-	if (!isUserMid(chatMid)) {
-		const chat = await client.getChat(chatMid);
-		return chat.fetchMessages(limit);
-	}
-	return fetchUserTalkMessages(client, chatMid, limit);
+	return (await fetchTalkHistory(client, chatMid, limit)).messages;
 }
 
 export function chatSummary(chat: Chat, includeRaw = false): Record<string, unknown> {
