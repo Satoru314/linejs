@@ -132,6 +132,31 @@ test("execute_linejs_cli rejects command groups, mcp, and long-running commands"
 	assert.equal(((listen as Record<string, unknown>).result as { isError: boolean }).isError, true);
 });
 
+test("tool descriptions point agents at chats recent and object --args", async () => {
+	const response = await call({ id: 10, method: "tools/list" });
+	const tools = (response.result as { tools: Array<{ name: string; description: string }> }).tools;
+	const description = tools.map((tool) => tool.description).join("\n");
+	assert.match(description, /chats recent/);
+	assert.match(description, /BOT/);
+	assert.match(description, /u = user or BOT/);
+	assert.match(description, /Old messages/);
+	assert.match(description, /JSON object in --args, not an array/);
+	assert.match(description, /getMessageBoxes --args/);
+	assert.match(description, /getRecentMessagesV2 --args/);
+});
+
+test("read-only mode is announced in the MCP tool descriptions", async () => {
+	const response = await handleMcpMessage(
+		{ jsonrpc: "2.0", id: 11, method: "tools/list" },
+		{ env: { LINEJS_READONLY: "1" } },
+	);
+	const tools = (response as { result: { tools: Array<{ name: string; description: string }> } })
+		.result.tools;
+	for (const tool of tools) {
+		assert.match(tool.description, /Read-only mode is enabled/);
+	}
+});
+
 test("notifications receive no response", async () => {
 	const response = await handleMcpMessage({
 		jsonrpc: "2.0",

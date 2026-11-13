@@ -7,11 +7,7 @@ import { runCli } from "../src/cli.ts";
 import { CliError } from "../src/errors.ts";
 import { EXECUTE_TOOL_NAME, LIST_TOOL_NAME, handleMcpMessage } from "../src/mcp/server.ts";
 import { ProfileStore } from "../src/profile-store.ts";
-import {
-	assertReadOnlyApiCall,
-	assertReadOnlyCommand,
-	isReadOnlyMode,
-} from "../src/readonly.ts";
+import { assertReadOnlyApiCall, assertReadOnlyCommand, isReadOnlyMode } from "../src/readonly.ts";
 import { findCommandByName } from "../src/registry.ts";
 
 function output() {

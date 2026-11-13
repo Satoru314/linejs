@@ -117,7 +117,7 @@ const callCommand: CommandSpec = {
 	name: "api call",
 	summary: "Call any LINEJS service method directly with JSON arguments.",
 	description:
-		"This is the escape hatch for APIs without a dedicated command. A JSON object is passed as one argument; a JSON array is spread as multiple arguments. No shell is involved.",
+		"This is the escape hatch for APIs without a dedicated command. A JSON object is passed as one argument. Arrays are rejected: wrap multiple arguments in an object that matches the method signature. No shell is involved.",
 	category: "Advanced",
 	args: [
 		{ name: "service", description: "Service name.", required: true },
@@ -128,20 +128,20 @@ const callCommand: CommandSpec = {
 			name: "args",
 			type: "string",
 			valueName: "json",
-			description: "JSON arguments (object or array).",
+			description: "JSON object with the method arguments (not an array).",
 		},
 		{
 			name: "args-file",
 			type: "string",
 			valueName: "path",
-			description: "Read JSON arguments from a file (use - for stdin).",
+			description: "Read a JSON object from a file (use - for stdin).",
 		},
 		outOption("Save a Blob/Uint8Array result to this file."),
 	],
 	examples: [
 		"line api call talk getProfile --args '{}'",
 		`line api call square getSquare --args '{"squareMid":"s..."}'`,
-		`line api call obs downloadObjectForService --args '[{"obsPath":"talk/m/...","oid":"..."}]' --out ./file.bin`,
+		`line api call obs downloadObjectForService --args '{"obsPath":"talk/m/...","oid":"..."}' --out ./file.bin`,
 	],
 	auth: true,
 	readOnly: true,
@@ -154,13 +154,13 @@ const callCommand: CommandSpec = {
 		if (argsOption !== undefined && fileOption !== undefined) {
 			throw new UsageError("Use either --args or --args-file, not both");
 		}
-		let parsed: unknown;
+		let parsed: Record<string, unknown> | undefined;
 		if (argsOption !== undefined) {
-			parsed = parseJson(argsOption, "--args");
+			parsed = parseJsonObject(argsOption, "--args");
 		} else if (fileOption !== undefined) {
-			parsed = parseJson(await readTextInput(fileOption, context.settings.cwd), fileOption);
+			parsed = parseJsonObject(await readTextInput(fileOption, context.settings.cwd), fileOption);
 		}
-		const callArgs = parsed === undefined ? [] : Array.isArray(parsed) ? parsed : [parsed];
+		const callArgs = parsed === undefined ? [] : [parsed];
 
 		return await withClient(context, async (session) => {
 			const target = resolveTarget(session, service);
@@ -192,14 +192,21 @@ const callCommand: CommandSpec = {
 	},
 };
 
-function parseJson(text: string, source: string): unknown {
+function parseJsonObject(text: string, source: string): Record<string, unknown> {
+	let parsed: unknown;
 	try {
-		return JSON.parse(text);
+		parsed = JSON.parse(text);
 	} catch (error) {
 		throw new UsageError(`Invalid JSON in ${source}`, {
 			cause: error instanceof Error ? error.message : String(error),
 		});
 	}
+	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+		throw new UsageError(
+			`${source} must be a JSON object; pass an object, not an array. Example: --args '{"messageBoxId":"u...","messagesCount":20}'`,
+		);
+	}
+	return parsed as Record<string, unknown>;
 }
 
 export const apiCommands: CommandSpec[] = [servicesCommand, methodsCommand, callCommand];

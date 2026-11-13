@@ -22,6 +22,8 @@ export const EXECUTE_TOOL_NAME = "execute_linejs_cli";
 const PROTOCOL_VERSIONS = ["2024-11-05", "2025-03-26", "2025-06-18"] as const;
 const LATEST_PROTOCOL_VERSION = PROTOCOL_VERSIONS[PROTOCOL_VERSIONS.length - 1]!;
 
+const COMMON_GUIDANCE = ` Start with chats recent to inspect recent inboxes: messages from companies and agents usually arrive in 1:1 chats with official accounts (BOT), and chats list only returns groups and rooms. MID prefixes: u = user or BOT, c = group, r = multi-person room. Old messages may not be available from the server. api call passes a JSON object in --args, not an array; examples: getMessageBoxes --args '{"messageBoxListRequest":{"activeOnly":true,"withUnreadCount":true,"messageBoxCountLimit":20}}' and getRecentMessagesV2 --args '{"messageBoxId":"u...","messagesCount":20}'.`;
+
 export interface ToolDefinition {
 	name: string;
 	description: string;
@@ -39,7 +41,7 @@ export function createToolDefinitions(
 	return [
 		{
 			name: LIST_TOOL_NAME,
-			description: `List every LINEJS CLI command with its arguments, options, category, whether it only reads data (readOnly), and whether it can run through execute_linejs_cli. Use this before calling execute_linejs_cli.${readOnlyNote}`,
+			description: `List every LINEJS CLI command with its arguments, options, category, whether it only reads data (readOnly), and whether it can run through execute_linejs_cli. Use this before calling execute_linejs_cli.${COMMON_GUIDANCE}${readOnlyNote}`,
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -57,7 +59,7 @@ export function createToolDefinitions(
 		},
 		{
 			name: EXECUTE_TOOL_NAME,
-			description: `Execute the LINEJS CLI directly (no shell) with an argv array. Example: {"args":["profile","get","--json"]}. The tool forces --json and rejects long-running or nested MCP commands.${readOnlyNote}`,
+			description: `Execute the LINEJS CLI directly (no shell) with an argv array. Example: {"args":["chats","recent","--json"]}. The tool forces --json and rejects long-running or nested MCP commands.${COMMON_GUIDANCE}${readOnlyNote}`,
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -65,7 +67,7 @@ export function createToolDefinitions(
 						type: "array",
 						items: { type: "string" },
 						minItems: 1,
-						description: 'Arguments after the `line` executable, e.g. ["chats","list","--json"].',
+						description: 'Arguments after the `line` executable, e.g. ["chats","recent","--json"].',
 					},
 				},
 				required: ["args"],
@@ -270,8 +272,7 @@ export async function handleMcpMessage(
 				protocolVersion,
 				capabilities: { tools: { listChanged: false }, events: {} },
 				serverInfo: { name: "@evex-dev/linejs-cli", version: VERSION },
-				instructions:
-					"Use list_linejs_cli to discover commands, then execute_linejs_cli with an argv array. No shell is involved; --json is forced. Long-running commands such as listen are rejected. MCP Events (webhook delivery) are available through events/list, events/subscribe, and events/unsubscribe.",
+				instructions: `Use list_linejs_cli to discover commands, then execute_linejs_cli with an argv array. No shell is involved; --json is forced. Start with chats recent: BOT 1:1 chats are not returned by chats list. Long-running commands such as listen are rejected. MCP Events (webhook delivery) are available through events/list, events/subscribe, and events/unsubscribe.${readOnlyMode ? ` Read-only mode is enabled (${READONLY_ENV}=1): only readOnly commands can run.` : ""}`,
 			});
 		}
 		case "ping":

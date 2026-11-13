@@ -172,8 +172,8 @@ line --json contacts list | jq '.contacts[].displayName'
 
 Every public method on `client`, `client.base`, and its services (`talk`,
 `square`, `relation`, `call`, `liff`, `moa`, `timeline`, `obs`, `e2ee`, …) is
-available. A JSON object is passed as one argument; a JSON array is spread as
-multiple arguments.
+available. Pass a JSON **object** as the single method argument. Arrays are
+rejected so the call shape stays unambiguous.
 
 ```sh
 line api services
@@ -182,7 +182,11 @@ line api call talk getProfile --args '{}'
 line api call square getSquare --args '{"squareMid":"s..."}'
 line api call call acquireGroupCallRoute --args '{"chatMid":"c...","mediaType":"AUDIO"}'
 line api call obs downloadObjectForService \
-  --args '[{"obsPath":"talk/m/...","oid":"..."}]' --out ./file.bin
+  --args '{"obsPath":"talk/m/...","oid":"..."}' --out ./file.bin
+line api call talk getMessageBoxes \
+  --args '{"messageBoxListRequest":{"activeOnly":true,"withUnreadCount":true,"messageBoxCountLimit":20}}'
+line api call talk getRecentMessagesV2 \
+  --args '{"messageBoxId":"u...","messagesCount":20}'
 ```
 
 Use `line api methods <service>` to discover method names. This is the escape
@@ -222,10 +226,19 @@ line mcp
 The stdio server exposes two tools:
 
 - `list_linejs_cli` — lists every command with arguments, options, category,
-  and whether it is MCP-executable.
+  `readOnly`, and whether it is MCP-executable.
 - `execute_linejs_cli` — receives an argv array (without the leading `line`)
   and executes the CLI **in-process, without a shell**. `--json` is forced and
   long-running commands (`listen`, `mcp`) are rejected.
+
+Start with `chats recent`, not `chats list`: messages from companies and agents
+usually arrive in 1:1 chats with official accounts (BOT), and those are not in
+the joined group/room list. MID prefixes are `u` (user or BOT), `c` (group), and
+`r` (multi-person room). Old messages may not be available from the server.
+`api call` takes a JSON **object** in `--args` (not an array), for example
+`{"messageBoxId":"u...","messagesCount":20}` for `getRecentMessagesV2`. When
+`LINEJS_READONLY=1` is set, the server explains in both tool descriptions that
+only `readOnly` commands can run.
 
 Example client configuration:
 
