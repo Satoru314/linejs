@@ -7,6 +7,7 @@ import { serialize } from "../output.ts";
 import { withClient } from "../session.ts";
 import {
 	limitOption,
+	RAW_OPTION,
 	resolveReaction,
 	squareChatSummary,
 	squareMessageSummary,
@@ -17,12 +18,14 @@ const listCommand: CommandSpec = {
 	name: "square list",
 	summary: "List joined OpenChat squares.",
 	category: "OpenChat (Square)",
-	examples: ["line square list", "line square list --json"],
+	options: [RAW_OPTION],
+	examples: ["line square list", "line square list --json", "line square list --raw"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		return await withClient(context, async ({ client }) => {
 			const squares = await client.fetchJoinedSquares();
-			return { squares: squares.map((square) => squareSummary(square, context.json)) };
+			return { squares: squares.map((square) => squareSummary(square, context.getBool("raw"))) };
 		});
 	},
 	format(value) {
@@ -39,13 +42,15 @@ const getCommand: CommandSpec = {
 	summary: "Show an OpenChat square.",
 	category: "OpenChat (Square)",
 	args: [{ name: "squareMid", description: "Square MID.", required: true }],
-	examples: ["line square get sxxxxxxxx"],
+	options: [RAW_OPTION],
+	examples: ["line square get sxxxxxxxx", "line square get sxxxxxxxx --raw"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		const squareMid = context.requireArg(0, "squareMid");
 		return await withClient(context, async ({ client }) => {
 			const square = await client.getSquare(squareMid);
-			return squareSummary(square, true);
+			return squareSummary(square, context.getBool("raw"));
 		});
 	},
 	format(value) {
@@ -58,12 +63,16 @@ const chatsCommand: CommandSpec = {
 	name: "square chats",
 	summary: "List joined OpenChat chats.",
 	category: "OpenChat (Square)",
+	options: [RAW_OPTION],
 	examples: ["line square chats", "line square chats --json"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		return await withClient(context, async ({ client }) => {
 			const chats = await client.fetchJoinedSquareChats();
-			return { chats: chats.map((chat) => squareChatSummary(chat, context.json)) };
+			return {
+				chats: chats.map((chat) => squareChatSummary(chat, context.getBool("raw"))),
+			};
 		});
 	},
 	format(value) {
@@ -83,13 +92,15 @@ const chatGetCommand: CommandSpec = {
 	summary: "Show one OpenChat chat.",
 	category: "OpenChat (Square)",
 	args: [{ name: "squareChatMid", description: "Square chat MID.", required: true }],
+	options: [RAW_OPTION],
 	examples: ["line square chat-get mxxxxxxxx"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		const squareChatMid = context.requireArg(0, "squareChatMid");
 		return await withClient(context, async ({ client }) => {
 			const chat = await client.getSquareChat(squareChatMid);
-			return squareChatSummary(chat, true);
+			return squareChatSummary(chat, context.getBool("raw"));
 		});
 	},
 	format(value) {
@@ -105,6 +116,7 @@ const chatMembersCommand: CommandSpec = {
 	args: [{ name: "squareChatMid", description: "Square chat MID.", required: true }],
 	examples: ["line square chat-members mxxxxxxxx"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		const squareChatMid = context.requireArg(0, "squareChatMid");
 		return await withClient(context, async ({ client }) => {
@@ -391,6 +403,7 @@ const searchCommand: CommandSpec = {
 	options: [limitOption(20)],
 	examples: ["line square search 'music'"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		const query = context.requireArg(0, "query");
 		const limit = context.getNumber("limit") ?? 20;
@@ -415,12 +428,14 @@ const eventsCommand: CommandSpec = {
 	summary: "Fetch recent events (and messages) for an OpenChat chat.",
 	category: "OpenChat (Square)",
 	args: [{ name: "squareChatMid", description: "Square chat MID.", required: true }],
-	options: [limitOption(50)],
+	options: [limitOption(50), RAW_OPTION],
 	examples: ["line square events mxxxxxxxx -n 50"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		const squareChatMid = context.requireArg(0, "squareChatMid");
 		const limit = context.getNumber("limit") ?? 50;
+		const includeRaw = context.getBool("raw");
 		return await withClient(context, async ({ base, client }) => {
 			const response = await base.square.fetchSquareChatEvents({ squareChatMid, limit });
 			const messages: SquareMessage[] = [];
@@ -439,7 +454,7 @@ const eventsCommand: CommandSpec = {
 			return {
 				syncToken: response.syncToken,
 				events: response.events,
-				messages: messages.map((message) => squareMessageSummary(message, context.json)),
+				messages: messages.map((message) => squareMessageSummary(message, includeRaw)),
 			};
 		});
 	},

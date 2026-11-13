@@ -62,6 +62,7 @@ const feedCommand: CommandSpec = {
 	],
 	examples: ["line voom feed", "line voom feed --post-limit 20"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		return await withClient(context, async ({ client }) => {
 			return await client.voom.feed({
@@ -81,6 +82,7 @@ const statusCommand: CommandSpec = {
 	category: "VOOM",
 	examples: ["line voom status"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		return await withClient(context, async ({ client }) => {
 			return await client.voom.timelineStatus();

@@ -2,7 +2,14 @@ import type { User } from "@evex-dev/linejs";
 import type { CommandSpec } from "../command.ts";
 import { UsageError } from "../errors.ts";
 import { withClient } from "../session.ts";
-import { asRecord, summaryLine, userSummary } from "./shared.ts";
+import {
+	asRecord,
+	contactProfileSummary,
+	fetchBotContacts,
+	RAW_OPTION,
+	summaryLine,
+	userSummary,
+} from "./shared.ts";
 
 function contactSummaryFromRaw(raw: unknown): Record<string, unknown> {
 	const record = asRecord(raw);
@@ -30,27 +37,37 @@ const listCommand: CommandSpec = {
 			valueName: "text",
 			description: "Filter by text in name or status.",
 		},
+		{
+			name: "include-bots",
+			type: "boolean",
+			description: "Include official accounts (BOT) that are not in the friend list.",
+		},
+		RAW_OPTION,
 	],
-	examples: ["line contacts list", "line contacts list --json"],
+	examples: ["line contacts list", "line contacts list --include-bots --json"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		return await withClient(context, async ({ client }) => {
 			const users = await client.fetchUsers();
+			const rows = users.map((user) => userSummary(user, context.getBool("raw")));
+			if (context.getBool("include-bots")) {
+				const bots = await fetchBotContacts(client, new Set(users.map((user) => user.mid)));
+				rows.push(...bots.map((bot) => contactProfileSummary(bot)));
+			}
 			const filter = context.getString("status")?.toLowerCase();
-			const rows = users
-				.map((user) => userSummary(user, context.json))
-				.filter((row) => {
-					if (!filter) return true;
-					return (
-						String(row.displayName ?? "")
-							.toLowerCase()
-							.includes(filter) ||
-						String(row.statusMessage ?? "")
-							.toLowerCase()
-							.includes(filter)
-					);
-				});
-			return { contacts: rows };
+			const filtered = rows.filter((row) => {
+				if (!filter) return true;
+				return (
+					String(row.displayName ?? "")
+						.toLowerCase()
+						.includes(filter) ||
+					String(row.statusMessage ?? "")
+						.toLowerCase()
+						.includes(filter)
+				);
+			});
+			return { contacts: filtered };
 		});
 	},
 	format(value) {
@@ -71,13 +88,15 @@ const getCommand: CommandSpec = {
 	summary: "Show one contact by MID.",
 	category: "Contacts",
 	args: [{ name: "mid", description: "User MID (u...).", required: true }],
-	examples: ["line contacts get uxxxxxxxx"],
+	options: [RAW_OPTION],
+	examples: ["line contacts get uxxxxxxxx", "line contacts get uxxxxxxxx --raw"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		const mid = context.requireArg(0, "mid");
 		return await withClient(context, async ({ client }) => {
 			const user = await client.getUser(mid);
-			return userSummary(user, context.json);
+			return userSummary(user, context.getBool("raw"));
 		});
 	},
 	format(value) {
@@ -181,22 +200,35 @@ const searchCommand: CommandSpec = {
 			valueName: "e164",
 			description: "Phone number in E.164 form.",
 		},
+		RAW_OPTION,
 	],
-	examples: ['line contacts search --id "@livecast"', "line contacts search --phone +819012345678"],
+	examples: [
+		'line contacts search --id "@livecast"',
+		"line contacts search --phone +819012345678",
+		'line contacts search --id "@livecast" --raw',
+	],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		const id = context.getString("id");
 		const phone = context.getString("phone");
+		const includeRaw = context.getBool("raw");
 		if (Boolean(id) === Boolean(phone)) {
 			throw new UsageError("Pass exactly one of --id or --phone");
 		}
 		return await withClient(context, async ({ base }) => {
 			if (id) {
 				const contact = await base.relation.findContactBySearchIdOrTicketV3({ searchId: id });
-				return { contact: contactSummaryFromRaw(contact), raw: context.json ? contact : undefined };
+				return {
+					contact: contactSummaryFromRaw(contact),
+					...(includeRaw ? { raw: contact } : {}),
+				};
 			}
 			const contact = await base.relation.findContactByPhoneV3({ phone: phone! });
-			return { contact: contactSummaryFromRaw(contact), raw: context.json ? contact : undefined };
+			return {
+				contact: contactSummaryFromRaw(contact),
+				...(includeRaw ? { raw: contact } : {}),
+			};
 		});
 	},
 	format(value) {
@@ -312,6 +344,7 @@ const calendarCommand: CommandSpec = {
 		"line contacts calendar uxxxxxxxx --event-kind BIRTHDAY",
 	],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		const mid = context.requireArg(0, "mid");
 		const kinds = context.getArray("event-kind");
@@ -384,6 +417,7 @@ const blockedCommand: CommandSpec = {
 	category: "Contacts",
 	examples: ["line contacts blocked"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		return await withClient(context, async ({ base }) => {
 			const mids = await base.talk.getBlockedContactIds();

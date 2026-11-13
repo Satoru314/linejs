@@ -1,13 +1,17 @@
 import type { CommandSpec } from "../command.ts";
+import type { Chat, Client } from "@evex-dev/linejs";
 import { UsageError } from "../errors.ts";
 import { readFileAsBlob } from "../files.ts";
 import { serialize } from "../output.ts";
 import { withClient } from "../session.ts";
 import {
 	chatSummary,
-	fetchUserTalkMessages,
+	type ContactProfile,
+	fetchContactProfiles,
+	fetchTalkHistory,
 	isUserMid,
 	limitOption,
+	RAW_OPTION,
 	requireJsonObject,
 	requireStringRecord,
 	resolveContentType,
@@ -15,29 +19,38 @@ import {
 	userChatSummary,
 } from "./shared.ts";
 
+export function summarizeChats(
+	chats: readonly Chat[],
+	includeRaw: boolean,
+	filter?: string,
+): Array<Record<string, unknown>> {
+	const normalized = filter?.toLowerCase();
+	return chats
+		.map((chat) => chatSummary(chat, includeRaw))
+		.filter(
+			(row) =>
+				!normalized ||
+				String(row.name ?? "")
+					.toLowerCase()
+					.includes(normalized),
+		);
+}
+
 const listCommand: CommandSpec = {
 	name: "chats list",
 	summary: "List group and room chats.",
 	category: "Chats",
 	options: [
 		{ name: "name", type: "string", valueName: "text", description: "Filter by chat name." },
+		RAW_OPTION,
 	],
-	examples: ["line chats list", "line chats list --json"],
+	examples: ["line chats list", "line chats list --json", "line chats list --raw"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		return await withClient(context, async ({ client }) => {
 			const chats = await client.fetchJoinedChats();
-			const filter = context.getString("name")?.toLowerCase();
-			const rows = chats
-				.map((chat) => chatSummary(chat, context.json))
-				.filter(
-					(row) =>
-						!filter ||
-						String(row.name ?? "")
-							.toLowerCase()
-							.includes(filter),
-				);
-			return { chats: rows };
+			return { chats: summarizeChats(chats, context.getBool("raw"), context.getString("name")) };
 		});
 	},
 	format(value) {
@@ -53,18 +66,130 @@ const listCommand: CommandSpec = {
 	},
 };
 
+export type RecentChatKind = "USER" | "BOT" | "GROUP" | "ROOM";
+
+export interface RecentChat {
+	mid: string;
+	kind: RecentChatKind;
+	name: string;
+	lastMessageTime: string | null;
+	unreadCount: number;
+	statusMessage?: string;
+}
+
+function int64Value(value: unknown): number | undefined {
+	if (typeof value === "number" && Number.isFinite(value)) return value;
+	if (typeof value === "bigint") return Number(value);
+	if (typeof value === "string" && /^\d+$/.test(value)) return Number(value);
+	return undefined;
+}
+
+function isoTime(milliseconds: number | undefined): string | null {
+	if (milliseconds === undefined || !Number.isFinite(milliseconds)) return null;
+	return new Date(milliseconds).toISOString();
+}
+
+/**
+ * Build the recent-inbox list from `getMessageBoxes`. User mids are resolved
+ * in one bulk contact lookup and group/room names in one bulk chat lookup.
+ */
+export async function fetchRecentChats(client: Client, limit: number): Promise<RecentChat[]> {
+	const response = await client.base.talk.getMessageBoxes({
+		messageBoxListRequest: {
+			activeOnly: true,
+			withUnreadCount: true,
+			messageBoxCountLimit: limit,
+		},
+	});
+	const boxes = response.messageBoxes ?? [];
+	const userMids = boxes.map((box) => box.id).filter(isUserMid);
+	const chatMids = boxes
+		.map((box) => box.id)
+		.filter((mid) => mid.startsWith("c") || mid.startsWith("r"));
+
+	const userProfiles: Map<string, ContactProfile> = userMids.length
+		? await fetchContactProfiles(client, userMids)
+		: new Map();
+	const chatNames = new Map<string, string>();
+	if (chatMids.length) {
+		const { chats } = await client.base.talk.getChats({ chatMids });
+		for (const chat of chats) chatNames.set(chat.chatMid, chat.chatName);
+	}
+
+	const rows = boxes.flatMap((box): Array<RecentChat & { sortTime: number }> => {
+		const mid = box.id;
+		const prefix = mid[0];
+		const profile = userProfiles.get(mid);
+		let kind: RecentChatKind;
+		if (prefix === "u") kind = profile?.isBot ? "BOT" : "USER";
+		else if (prefix === "c") kind = "GROUP";
+		else if (prefix === "r") kind = "ROOM";
+		else return [];
+
+		const sortTime = int64Value(box.lastDeliveredMessageId?.deliveredTime) ?? 0;
+		return [
+			{
+				mid,
+				kind,
+				name: profile?.displayName ?? chatNames.get(mid) ?? mid,
+				lastMessageTime: isoTime(sortTime || undefined),
+				unreadCount: int64Value(box.unreadCount) ?? 0,
+				...(kind === "BOT" && profile?.statusMessage
+					? { statusMessage: profile.statusMessage }
+					: {}),
+				sortTime,
+			},
+		];
+	});
+
+	return rows
+		.sort((a, b) => b.sortTime - a.sortTime)
+		.slice(0, limit)
+		.map(({ sortTime: _sortTime, ...row }) => row);
+}
+
+const recentCommand: CommandSpec = {
+	name: "chats recent",
+	summary: "List recent inbox chats, including 1:1 chats with official accounts (BOT).",
+	category: "Chats",
+	options: [limitOption(20)],
+	examples: ["line chats recent", "line chats recent -n 50 --json"],
+	auth: true,
+	readOnly: true,
+	async run(context) {
+		const limit = context.getNumber("limit") ?? 20;
+		if (limit <= 0) throw new UsageError("--limit must be positive");
+		return await withClient(context, async ({ client }) => {
+			return { chats: await fetchRecentChats(client, limit) };
+		});
+	},
+	format(value) {
+		const chats = (value as { chats: RecentChat[] }).chats;
+		if (!chats.length) return "No recent chats.";
+		const lines = ["MID  KIND  NAME  UNREAD  LAST"];
+		for (const chat of chats) {
+			lines.push(
+				`${chat.mid}  ${chat.kind}  ${chat.name}  ${String(chat.unreadCount)}  ${chat.lastMessageTime ?? ""}`,
+			);
+		}
+		return lines.join("\n");
+	},
+};
+
 const getCommand: CommandSpec = {
 	name: "chats get",
 	summary: "Show one chat and its members.",
 	category: "Chats",
 	args: [{ name: "chatMid", description: "Chat MID (c... or r...).", required: true }],
-	examples: ["line chats get cxxxxxxxx"],
+	options: [RAW_OPTION],
+	examples: ["line chats get cxxxxxxxx", "line chats get cxxxxxxxx --raw"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		const chatMid = context.requireArg(0, "chatMid");
 		return await withClient(context, async ({ client }) => {
 			const chat = await client.getChat(chatMid);
-			return chatSummary(chat, true);
+			return chatSummary(chat, context.getBool("raw"));
 		});
 	},
 	format(value) {
@@ -75,7 +200,11 @@ const getCommand: CommandSpec = {
 			`Name:     ${String(chat.name ?? "")}`,
 			`Type:     ${String(chat.type ?? "")}`,
 		];
-		if (Array.isArray(raw.members)) lines.push(`Members:  ${raw.members.length}`);
+		if (Array.isArray(raw.members)) {
+			lines.push(`Members:  ${raw.members.length}`);
+		} else if (chat.memberCount !== undefined) {
+			lines.push(`Members:  ${String(chat.memberCount)}`);
+		}
 		if (Array.isArray(raw.invitees)) lines.push(`Invitees: ${raw.invitees.length}`);
 		return lines.join("\n");
 	},
@@ -88,26 +217,34 @@ const messagesCommand: CommandSpec = {
 	args: [
 		{ name: "chatMid", description: "Chat MID (c..., r..., or u... for 1:1).", required: true },
 	],
-	options: [limitOption(20)],
-	examples: ["line chats messages cxxxxxxxx -n 50", "line chats messages cxxxxxxxx --json"],
+	options: [limitOption(20), RAW_OPTION],
+	examples: [
+		"line chats messages cxxxxxxxx -n 50",
+		"line chats messages cxxxxxxxx --json",
+		"line chats messages uxxxxxxxx --raw",
+	],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		const chatMid = context.requireArg(0, "chatMid");
 		const limit = context.getNumber("limit") ?? 20;
+		const includeRaw = context.getBool("raw");
 		if (limit <= 0) throw new UsageError("--limit must be positive");
 		return await withClient(context, async ({ client }) => {
+			const history = await fetchTalkHistory(client, chatMid, limit);
+			const messages = history.messages.map((message) => talkMessageSummary(message, includeRaw));
 			if (isUserMid(chatMid)) {
-				const messages = await fetchUserTalkMessages(client, chatMid, limit);
 				return {
 					chat: userChatSummary(chatMid),
-					messages: messages.map((message) => talkMessageSummary(message, context.json)),
+					messages,
+					historyAvailable: history.historyAvailable,
 				};
 			}
 			const chat = await client.getChat(chatMid);
-			const messages = await chat.fetchMessages(limit);
 			return {
-				chat: chatSummary(chat),
-				messages: messages.map((message) => talkMessageSummary(message, context.json)),
+				chat: chatSummary(chat, includeRaw),
+				messages,
+				historyAvailable: history.historyAvailable,
 			};
 		});
 	},
@@ -461,6 +598,7 @@ const bgmGetCommand: CommandSpec = {
 	args: [{ name: "chatMid", description: "Chat MID.", required: true }],
 	examples: ["line chats bgm get cxxxxxxxx"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		const chatMid = context.requireArg(0, "chatMid");
 		return await withClient(context, async ({ client }) => {
@@ -506,6 +644,7 @@ const bgmSetCommand: CommandSpec = {
 
 export const chatsCommands: CommandSpec[] = [
 	listCommand,
+	recentCommand,
 	getCommand,
 	messagesCommand,
 	sendCommand,

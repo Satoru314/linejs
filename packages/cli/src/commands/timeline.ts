@@ -159,6 +159,7 @@ const listCommand: CommandSpec = {
 	],
 	examples: ["line timeline list cxxxxxxxx"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		const homeId = context.requireArg(0, "homeId");
 		return await withClient(context, async ({ base }) => {
@@ -184,6 +185,7 @@ const getCommand: CommandSpec = {
 	],
 	examples: ["line timeline get cxxxxxxxx 123456"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		const homeId = context.requireArg(0, "homeId");
 		const postId = context.requireArg(1, "postId");

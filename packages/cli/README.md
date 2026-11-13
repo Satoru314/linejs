@@ -22,6 +22,7 @@ line auth login
 line auth status
 line profile get
 line contacts list
+line chats recent
 line chats list
 line chats messages c... -n 20
 line chats send c... "Hello from linejs"
@@ -97,14 +98,49 @@ registers the E2EE key material; token-only logins may lack group E2EE keys.
 Run `line commands` or `line commands --json` for the full command list.
 `line help <command>` prints usage, options, and examples.
 
+## Read-only mode
+
+Set `LINEJS_READONLY=1` to deny every command that is not explicitly marked as
+read-only. This is an allowlist: a command without `readOnly: true` in its
+`CommandSpec` is rejected even if it happens to be harmless, so new commands
+stay safe until they are reviewed. Mark a command as read-only only when it
+does not change state **and** does not return secrets such as tokens, keys, or
+sessions. Commands that print secrets (`auth token`, `liff token`, `liff view`,
+`voom token`, `storage get`, `storage list --values`, `storage export`) and
+commands that write local files (`moa download`, `messages data`,
+`square message-data`) are therefore not read-only.
+
+```sh
+LINEJS_READONLY=1 line chats list --json
+LINEJS_READONLY=1 line chats send u... "hello"   # READ_ONLY error
+```
+
+`api call` is allowed only for method names that start with `get` or `fetch`,
+and even then a known list of credential-returning methods is denied (for
+example `getToken`, `getLiffToken`, `getE2EESelfKeyData`,
+`getE2EEGroupSharedKey`, and the generic `get` storage accessor):
+
+```sh
+LINEJS_READONLY=1 line api call talk getMessageBoxes --args '{"messageBoxListRequest":{}}'
+LINEJS_READONLY=1 line api call talk sendMessage --args '{}'   # READ_ONLY error
+LINEJS_READONLY=1 line api call e2ee getE2EESelfKeyData --args '{"mid":"u..."}'   # READ_ONLY error
+```
+
+The MCP server applies the same rule to `execute_linejs_cli`, and
+`list_linejs_cli` reports each command's `readOnly` flag plus an
+`mcpExecutable` value that is `false` for rejected commands.
+
 ## Commands
 
 - **auth**: `login`, `status`, `token`, `logout`, `profiles`
 - **profile**: `get`, `update`, `image`, `background` (`get` uses the cached profile; add `--check-session` for a fresh `getProfile()`)
 - **contacts**: `list`, `get`, `add`, `search`, `rename`, `favorite`, `mute`,
-  `hide`, `calendar`, `block`, `unblock`, `blocked`
-- **chats**: `list`, `get`, `messages`, `send`, `send-media`, `compact`,
+  `hide`, `calendar`, `block`, `unblock`, `blocked` (`list --include-bots` also
+  returns official accounts that are not in the friend list)
+- **chats**: `list`, `recent`, `get`, `messages`, `send`, `send-media`, `compact`,
   `create`, `invite`, `kick`, `leave`, `rename`, `bgm get`, `bgm set`
+  (`recent` reads the active inbox and includes 1:1 BOT chats; `list` only
+  returns joined groups and rooms)
 - **messages**: `react`, `cancel-reaction`, `unsend`, `read`, `reply`, `show`,
   `pin`, `data`
 - **square**: `list`, `get`, `chats`, `chat-get`, `chat-members`,
@@ -145,8 +181,8 @@ line --json contacts list | jq '.contacts[].displayName'
 
 Every public method on `client`, `client.base`, and its services (`talk`,
 `square`, `relation`, `call`, `liff`, `moa`, `timeline`, `obs`, `e2ee`, …) is
-available. A JSON object is passed as one argument; a JSON array is spread as
-multiple arguments.
+available. Pass a JSON **object** as the single method argument. Arrays are
+rejected so the call shape stays unambiguous.
 
 ```sh
 line api services
@@ -155,11 +191,31 @@ line api call talk getProfile --args '{}'
 line api call square getSquare --args '{"squareMid":"s..."}'
 line api call call acquireGroupCallRoute --args '{"chatMid":"c...","mediaType":"AUDIO"}'
 line api call obs downloadObjectForService \
-  --args '[{"obsPath":"talk/m/...","oid":"..."}]' --out ./file.bin
+  --args '{"obsPath":"talk/m/...","oid":"..."}' --out ./file.bin
+line api call talk getMessageBoxes \
+  --args '{"messageBoxListRequest":{"activeOnly":true,"withUnreadCount":true,"messageBoxCountLimit":20}}'
+line api call talk getRecentMessagesV2 \
+  --args '{"messageBoxId":"u...","messagesCount":20}'
 ```
 
 Use `line api methods <service>` to discover method names. This is the escape
 hatch for newer APIs that do not have a dedicated command yet.
+
+### Reading old messages
+
+`chats messages` reads directly from the message box with `getRecentMessagesV2`
+instead of searching the active inbox first. This also works for 1:1 chats that
+are not in `getMessageBoxes()`. An empty result is not an error: the JSON output
+contains `"historyAvailable": false` because LINE may not expose older messages
+through this API. Real missing-chat or permission errors are returned as-is.
+
+JSON output stays small by default: `chats list` returns only `mid`, `name`,
+`type`, and a numeric `memberCount` (omitted when the count is unknown).
+Group and room member maps are not included; pass `--raw` on commands that
+expose it (`chats list|get|messages`, `contacts list|get|search`,
+`messages show`, and the `square` read commands) to include the full LINEJS
+object. `chats recent` fills a BOT's `statusMessage` from `getContactsV2` when
+`getContactsV3` leaves it empty.
 
 ### Listening
 
@@ -182,10 +238,19 @@ line mcp
 The stdio server exposes two tools:
 
 - `list_linejs_cli` — lists every command with arguments, options, category,
-  and whether it is MCP-executable.
+  `readOnly`, and whether it is MCP-executable.
 - `execute_linejs_cli` — receives an argv array (without the leading `line`)
   and executes the CLI **in-process, without a shell**. `--json` is forced and
   long-running commands (`listen`, `mcp`) are rejected.
+
+Start with `chats recent`, not `chats list`: messages from companies and agents
+usually arrive in 1:1 chats with official accounts (BOT), and those are not in
+the joined group/room list. MID prefixes are `u` (user or BOT), `c` (group), and
+`r` (multi-person room). Old messages may not be available from the server.
+`api call` takes a JSON **object** in `--args` (not an array), for example
+`{"messageBoxId":"u...","messagesCount":20}` for `getRecentMessagesV2`. When
+`LINEJS_READONLY=1` is set, the server explains in both tool descriptions that
+only `readOnly` commands can run.
 
 Example client configuration:
 

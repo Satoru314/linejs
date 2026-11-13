@@ -9,7 +9,7 @@ import {
 	type User,
 } from "@evex-dev/linejs";
 import type { CommandContext } from "../context.ts";
-import { CliError, UsageError } from "../errors.ts";
+import { CliError, UsageError, errorMessage } from "../errors.ts";
 import type { OptionSpec } from "../args.ts";
 import { humanValue } from "../output.ts";
 
@@ -37,6 +37,12 @@ export function outOption(description = "Write the result to this file."): Optio
 		description,
 	};
 }
+
+export const RAW_OPTION: OptionSpec = {
+	name: "raw",
+	type: "boolean",
+	description: "Include the raw LINEJS object in the output.",
+};
 
 export function pickString(record: unknown, key: string): string | undefined {
 	if (!record || typeof record !== "object") return undefined;
@@ -69,67 +75,201 @@ export function userChatSummary(mid: string): Record<string, unknown> {
 	};
 }
 
+export interface TalkHistory {
+	messages: TalkMessage[];
+	historyAvailable: boolean;
+}
+
+export interface ContactProfile {
+	mid: string;
+	displayName?: string;
+	statusMessage?: string;
+	isBot: boolean;
+}
+
+/**
+ * `getContactsV3` returns the explicit `userType` discriminator from
+ * linejs-types (`USER` or `BOT`). We use it instead of a name or `capableBuddy`
+ * heuristic, and the same bulk response supplies the display name and status
+ * message.
+ */
+function contactProfileFromRaw(raw: unknown): ContactProfile {
+	const record = asRecord(raw);
+	const profile = asRecord(record.targetProfileDetail);
+	const status = asRecord(profile.statusMessage);
+	return {
+		mid: String(record.targetUserMid ?? record.mid ?? ""),
+		displayName: pickString(profile, "profileName") ?? pickString(record, "displayName"),
+		statusMessage: pickString(status, "value") ?? pickString(record, "statusMessage"),
+		isBot: record.userType === "BOT" || record.userType === 2,
+	};
+}
+
+/**
+ * Bulk contact lookup. All mids are fetched in batches of 100, never one by
+ * one, so `chats recent` can resolve a whole inbox in one or two requests.
+ *
+ * `getContactsV3` leaves `targetProfileDetail.statusMessage` empty for some
+ * official accounts. Their legacy `getContactsV2` contact record still has a
+ * plain `statusMessage` field, so fetch that record only for BOTs that have no
+ * status yet.
+ */
+export async function fetchContactProfiles(
+	client: Client,
+	mids: readonly string[],
+): Promise<Map<string, ContactProfile>> {
+	const unique = [...new Set(mids.filter(isUserMid))];
+	const profiles = new Map<string, ContactProfile>();
+	for (let index = 0; index < unique.length; index += 100) {
+		const response = await client.base.relation.getContactsV3({
+			mids: unique.slice(index, index + 100),
+		});
+		for (const raw of response.responses) {
+			const profile = contactProfileFromRaw(raw);
+			if (profile.mid) profiles.set(profile.mid, profile);
+		}
+	}
+
+	const botsWithoutStatus = [...profiles.values()]
+		.filter((profile) => profile.isBot && !profile.statusMessage)
+		.map((profile) => profile.mid);
+	for (let index = 0; index < botsWithoutStatus.length; index += 100) {
+		const response = await client.base.talk.getContactsV2({
+			mids: botsWithoutStatus.slice(index, index + 100),
+		});
+		for (const [mid, entry] of Object.entries(response.contacts ?? {})) {
+			const statusMessage = pickString(asRecord(asRecord(entry).contact), "statusMessage");
+			const profile = profiles.get(mid);
+			if (profile && statusMessage) profile.statusMessage = statusMessage;
+		}
+	}
+	return profiles;
+}
+
+/** Fetch official accounts that are not already in the friend list. */
+export async function fetchBotContacts(
+	client: Client,
+	excludeMids: ReadonlySet<string>,
+): Promise<ContactProfile[]> {
+	const allMids = await client.base.talk.getAllContactIds({ syncReason: "INTERNAL" });
+	const profiles = await fetchContactProfiles(
+		client,
+		allMids.filter((mid) => !excludeMids.has(mid)),
+	);
+	return [...profiles.values()].filter((profile) => profile.isBot);
+}
+
+export function contactProfileSummary(profile: ContactProfile): Record<string, unknown> {
+	return {
+		mid: profile.mid,
+		displayName: profile.displayName,
+		statusMessage: profile.statusMessage,
+		...(profile.isBot ? { bot: true } : {}),
+	};
+}
+
+/**
+ * Fetch recent talk messages for a talk mid via `getRecentMessagesV2`.
+ *
+ * Do not list message boxes first: `getMessageBoxes` only returns the active
+ * inbox, so old 1:1 chats (and groups/rooms) look "not found" even though they
+ * exist. `getRecentMessagesV2` accepts the chat mid directly. An empty result
+ * is reported as `historyAvailable: false` instead of an error.
+ */
+export async function fetchTalkHistory(
+	client: Client,
+	chatMid: string,
+	limit: number,
+): Promise<TalkHistory> {
+	let raws: Awaited<ReturnType<typeof client.base.talk.getRecentMessagesV2>>;
+	try {
+		raws = await client.base.talk.getRecentMessagesV2({
+			messageBoxId: chatMid,
+			messagesCount: limit,
+		});
+	} catch (error) {
+		throw new CliError("LINEJS_ERROR", errorMessage(error), {
+			cause: error,
+			details: { chatMid },
+		});
+	}
+	const messages = await Promise.all(
+		(raws ?? []).map((raw) => TalkMessage.fromRawTalk(raw, client)),
+	);
+	return { messages, historyAvailable: messages.length > 0 };
+}
+
 /**
  * Fetch recent talk messages for a 1:1 (user) mid via the message-box APIs.
- * Group/room mids keep using `Chat.fetchMessages`; this is the user-mid
- * counterpart that `client.getChat` cannot serve.
+ * Kept as a small wrapper for callers that only need the message array.
  */
 export async function fetchUserTalkMessages(
 	client: Client,
 	userMid: string,
 	limit: number,
 ): Promise<TalkMessage[]> {
-	const boxes = await client.base.talk.getMessageBoxes({
-		messageBoxListRequest: {},
-	});
-	const box = boxes.messageBoxes.find((entry) => entry.id === userMid);
-	if (!box) {
-		throw new CliError("NOT_FOUND", `Message box ${userMid} was not found`, {
-			details: {
-				chatMid: userMid,
-				hint: "Open the 1:1 chat once in an official client, then retry.",
-			},
-		});
-	}
-	const raws = await client.base.talk.getPreviousMessagesV2WithRequest({
-		request: {
-			messageBoxId: box.id,
-			endMessageId: {
-				messageId: box.lastDeliveredMessageId.messageId,
-				deliveredTime: box.lastDeliveredMessageId.deliveredTime,
-			},
-			messagesCount: limit,
-		},
-	});
-	return await Promise.all(raws.map((raw) => TalkMessage.fromRawTalk(raw, client)));
+	return (await fetchTalkHistory(client, userMid, limit)).messages;
 }
 
 /**
- * Fetch recent talk messages for any talk mid. User (1:1) mids go through
- * the message-box path; group/room mids keep the existing `getChat` path.
+ * Fetch recent talk messages for any talk mid. All kinds use
+ * `getRecentMessagesV2`; there is no inbox-list fallback.
  */
 export async function fetchTalkMessages(
 	client: Client,
 	chatMid: string,
 	limit: number,
 ): Promise<TalkMessage[]> {
-	if (!isUserMid(chatMid)) {
-		const chat = await client.getChat(chatMid);
-		return chat.fetchMessages(limit);
+	return (await fetchTalkHistory(client, chatMid, limit)).messages;
+}
+
+function countMembers(value: unknown): number | undefined {
+	if (Array.isArray(value)) return value.length;
+	if (value && typeof value === "object") return Object.keys(value).length;
+	return undefined;
+}
+
+/**
+ * `Chat` has no top-level member count. Groups carry one entry per member in
+ * `extra.groupExtra.memberMids`; rooms use the peer/peerApp extras. Return
+ * `undefined` when no count is available instead of exposing the whole extra
+ * map as `memberCount`.
+ */
+function chatMemberCount(raw: Record<string, unknown>): number | undefined {
+	if (typeof raw.memberCount === "number" && Number.isFinite(raw.memberCount)) {
+		return raw.memberCount;
 	}
-	return fetchUserTalkMessages(client, chatMid, limit);
+	const extra = asRecord(raw.extra);
+	const group = asRecord(extra.groupExtra);
+	const peer = asRecord(extra.peerExtra);
+	const peerApp = asRecord(extra.peerAppExtra ?? peer.peerAppExtra);
+	const room = asRecord(extra.roomExtra);
+	const direct = [group.memberCount, peer.memberCount, peerApp.memberCount, room.memberCount];
+	for (const value of direct) {
+		if (typeof value === "number" && Number.isFinite(value)) return value;
+	}
+	const candidates = [
+		group.memberMids,
+		peer.memberMids,
+		peerApp.memberMids,
+		room.memberMids,
+		extra.memberMids,
+	];
+	for (const candidate of candidates) {
+		const count = countMembers(candidate);
+		if (count !== undefined) return count;
+	}
+	return undefined;
 }
 
 export function chatSummary(chat: Chat, includeRaw = false): Record<string, unknown> {
 	const raw = asRecord(chat.raw);
+	const memberCount = chatMemberCount(raw);
 	return {
 		mid: chat.mid,
 		name: chat.name,
 		type: raw.type,
-		memberCount: raw.memberCount ?? raw.extra,
-		notificationDisabled: raw.notificationDisabled,
-		picturePath: raw.picturePath,
-		createdTime: raw.createdTime,
+		...(memberCount === undefined ? {} : { memberCount }),
 		...(includeRaw ? { raw: chat.raw } : {}),
 	};
 }

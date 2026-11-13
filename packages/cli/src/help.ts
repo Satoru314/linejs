@@ -110,6 +110,9 @@ export function commandHelp(command: CommandSpec): string {
 	return lines.join("\n");
 }
 
-export function commandsMetadata(commands: readonly CommandSpec[] = allCommands): unknown[] {
-	return commands.map((command) => commandMetadata(command));
+export function commandsMetadata(
+	commands: readonly CommandSpec[] = allCommands,
+	readOnlyMode = false,
+): unknown[] {
+	return commands.map((command) => commandMetadata(command, true, readOnlyMode));
 }

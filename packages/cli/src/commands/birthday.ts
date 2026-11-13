@@ -51,6 +51,7 @@ const boardIdCommand: CommandSpec = {
 	args: [{ name: "homeId", description: "Home or chat MID.", required: true }],
 	examples: ["line birthday board-id cxxxxxxxx"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		const homeId = context.requireArg(0, "homeId");
 		return await withClient(context, async ({ client }) => {
@@ -70,6 +71,7 @@ const boardCommand: CommandSpec = {
 	],
 	examples: ["line birthday board BOARD"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		const boardId = context.requireArg(0, "boardId");
 		return await withClient(context, async ({ client }) => {
@@ -89,6 +91,7 @@ const cardsCommand: CommandSpec = {
 	],
 	examples: ["line birthday cards BOARD"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		const boardId = context.requireArg(0, "boardId");
 		return await withClient(context, async ({ client }) => {
@@ -111,6 +114,7 @@ const celebrationsCommand: CommandSpec = {
 	],
 	examples: ["line birthday celebrations BOARD"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		const boardId = context.requireArg(0, "boardId");
 		return await withClient(context, async ({ client }) => {
@@ -133,6 +137,7 @@ const likesCommand: CommandSpec = {
 	],
 	examples: ["line birthday likes BOARD CARD"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		const boardId = context.requireArg(0, "boardId");
 		const cardId = context.requireArg(1, "cardId");
@@ -149,6 +154,7 @@ const templatesCommand: CommandSpec = {
 	category: "Birthday Board",
 	examples: ["line birthday templates"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		return await withClient(context, async ({ client }) => {
 			return await client.birthdayBoard.listCardTemplates();

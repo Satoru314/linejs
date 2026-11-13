@@ -1,12 +1,18 @@
 import { once } from "node:events";
 import { createInterface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
-import { splitLeadingGlobalOptions } from "../args.ts";
+import { GLOBAL_OPTIONS, parseOptions, splitLeadingGlobalOptions } from "../args.ts";
 import { type CommandSpec, commandMetadata, isMcpExecutable } from "../command.ts";
 import { allCommands, resolveCommandTokens } from "../registry.ts";
 import { runCli } from "../cli.ts";
 import { VERSION } from "../version.ts";
 import { errorMessage } from "../errors.ts";
+import {
+	assertReadOnlyApiCall,
+	assertReadOnlyCommand,
+	isReadOnlyMode,
+	READONLY_ENV,
+} from "../readonly.ts";
 import { EventRpcError, McpEventHub } from "./events.ts";
 import { createLineEventSource } from "./listen-source.ts";
 
@@ -16,6 +22,8 @@ export const EXECUTE_TOOL_NAME = "execute_linejs_cli";
 const PROTOCOL_VERSIONS = ["2024-11-05", "2025-03-26", "2025-06-18"] as const;
 const LATEST_PROTOCOL_VERSION = PROTOCOL_VERSIONS[PROTOCOL_VERSIONS.length - 1]!;
 
+const COMMON_GUIDANCE = ` Start with chats recent to inspect recent inboxes: messages from companies and agents usually arrive in 1:1 chats with official accounts (BOT), and chats list only returns groups and rooms. MID prefixes: u = user or BOT, c = group, r = multi-person room. Old messages may not be available from the server. api call passes a JSON object in --args, not an array; examples: getMessageBoxes --args '{"messageBoxListRequest":{"activeOnly":true,"withUnreadCount":true,"messageBoxCountLimit":20}}' and getRecentMessagesV2 --args '{"messageBoxId":"u...","messagesCount":20}'.`;
+
 export interface ToolDefinition {
 	name: string;
 	description: string;
@@ -24,13 +32,16 @@ export interface ToolDefinition {
 
 export function createToolDefinitions(
 	commands: readonly CommandSpec[] = allCommands,
+	readOnlyMode = false,
 ): ToolDefinition[] {
 	const categories = [...new Set(commands.map((command) => command.category))].sort();
+	const readOnlyNote = readOnlyMode
+		? ` Read-only mode is enabled (${READONLY_ENV}=1): only commands with readOnly: true can run; mcpExecutable is false for the rest.`
+		: "";
 	return [
 		{
 			name: LIST_TOOL_NAME,
-			description:
-				"List every LINEJS CLI command with its arguments, options, category, and whether it can run through execute_linejs_cli. Use this before calling execute_linejs_cli.",
+			description: `List every LINEJS CLI command with its arguments, options, category, whether it only reads data (readOnly), and whether it can run through execute_linejs_cli. Use this before calling execute_linejs_cli.${COMMON_GUIDANCE}${readOnlyNote}`,
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -48,8 +59,7 @@ export function createToolDefinitions(
 		},
 		{
 			name: EXECUTE_TOOL_NAME,
-			description:
-				'Execute the LINEJS CLI directly (no shell) with an argv array. Example: {"args":["profile","get","--json"]}. The tool forces --json and rejects long-running or nested MCP commands.',
+			description: `Execute the LINEJS CLI directly (no shell) with an argv array. Example: {"args":["chats","recent","--json"]}. The tool forces --json and rejects long-running or nested MCP commands.${COMMON_GUIDANCE}${readOnlyNote}`,
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -57,7 +67,7 @@ export function createToolDefinitions(
 						type: "array",
 						items: { type: "string" },
 						minItems: 1,
-						description: 'Arguments after the `line` executable, e.g. ["chats","list","--json"].',
+						description: 'Arguments after the `line` executable, e.g. ["chats","recent","--json"].',
 					},
 				},
 				required: ["args"],
@@ -109,7 +119,7 @@ function toolText(text: string, isError = false, structuredContent?: Record<stri
 	};
 }
 
-function listCommands(argumentsValue: Record<string, unknown>) {
+function listCommands(argumentsValue: Record<string, unknown>, readOnlyMode: boolean) {
 	const category =
 		typeof argumentsValue.category === "string" ? argumentsValue.category : undefined;
 	const includeOptions = argumentsValue.includeOptions !== false;
@@ -122,7 +132,7 @@ function listCommands(argumentsValue: Record<string, unknown>) {
 				command.name.toLowerCase().includes(normalized)
 			);
 		})
-		.map((command) => commandMetadata(command, includeOptions));
+		.map((command) => commandMetadata(command, includeOptions, readOnlyMode));
 	return {
 		commandCount: commands.length,
 		commands,
@@ -132,6 +142,7 @@ function listCommands(argumentsValue: Record<string, unknown>) {
 async function executeCommand(
 	argumentsValue: Record<string, unknown>,
 	executor: CliExecutor,
+	readOnlyMode: boolean,
 ): Promise<Record<string, unknown>> {
 	if (
 		!Array.isArray(argumentsValue.args) ||
@@ -183,6 +194,18 @@ async function executeCommand(
 			true,
 		);
 	}
+	try {
+		assertReadOnlyCommand(command, readOnlyMode);
+		if (command.name === "api call") {
+			const parsed = parseOptions(resolution.remaining, [
+				...(command.options ?? []),
+				...GLOBAL_OPTIONS,
+			]);
+			assertReadOnlyApiCall(command.name, parsed.positionals[1], readOnlyMode);
+		}
+	} catch (error) {
+		return toolText(errorMessage(error), true);
+	}
 
 	const separator = args.indexOf("--");
 	const executionArgs =
@@ -216,11 +239,13 @@ export async function handleMcpMessage(
 		commands?: readonly CommandSpec[];
 		executor?: CliExecutor;
 		events?: McpEventHub;
+		env?: NodeJS.ProcessEnv;
 	} = {},
 ): Promise<unknown | null> {
 	if (!message || typeof message !== "object" || Array.isArray(message)) {
 		return jsonRpcError(null, -32600, "Invalid Request");
 	}
+	const readOnlyMode = isReadOnlyMode(options.env ?? process.env);
 	const request = message as Record<string, unknown>;
 	const id = (request.id as string | number | null | undefined) ?? null;
 	const isNotification = request.id === undefined;
@@ -247,15 +272,14 @@ export async function handleMcpMessage(
 				protocolVersion,
 				capabilities: { tools: { listChanged: false }, events: {} },
 				serverInfo: { name: "@evex-dev/linejs-cli", version: VERSION },
-				instructions:
-					"Use list_linejs_cli to discover commands, then execute_linejs_cli with an argv array. No shell is involved; --json is forced. Long-running commands such as listen are rejected. MCP Events (webhook delivery) are available through events/list, events/subscribe, and events/unsubscribe.",
+				instructions: `Use list_linejs_cli to discover commands, then execute_linejs_cli with an argv array. No shell is involved; --json is forced. Start with chats recent: BOT 1:1 chats are not returned by chats list. Long-running commands such as listen are rejected. MCP Events (webhook delivery) are available through events/list, events/subscribe, and events/unsubscribe.${readOnlyMode ? ` Read-only mode is enabled (${READONLY_ENV}=1): only readOnly commands can run.` : ""}`,
 			});
 		}
 		case "ping":
 			return jsonRpcResult(id, {});
 		case "tools/list": {
 			return jsonRpcResult(id, {
-				tools: createToolDefinitions(options.commands ?? allCommands),
+				tools: createToolDefinitions(options.commands ?? allCommands, readOnlyMode),
 			});
 		}
 		case "tools/call": {
@@ -266,7 +290,7 @@ export async function handleMcpMessage(
 					? (params.arguments as Record<string, unknown>)
 					: {};
 			if (name === LIST_TOOL_NAME) {
-				const result = listCommands(argumentsValue);
+				const result = listCommands(argumentsValue, readOnlyMode);
 				return jsonRpcResult(id, {
 					content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
 					structuredContent: result,
@@ -275,7 +299,11 @@ export async function handleMcpMessage(
 			if (name === EXECUTE_TOOL_NAME) {
 				return jsonRpcResult(
 					id,
-					await executeCommand(argumentsValue, options.executor ?? defaultCliExecutor),
+					await executeCommand(
+						argumentsValue,
+						options.executor ?? defaultCliExecutor,
+						readOnlyMode,
+					),
 				);
 			}
 			return jsonRpcError(id, -32602, `Unknown tool: ${String(name)}`);
@@ -323,6 +351,8 @@ export interface RunMcpServerOptions {
 	profile?: string;
 	/** Inject a hub (tests); otherwise one backed by `line listen` is created. */
 	events?: McpEventHub;
+	/** Environment used for LINEJS_READONLY; defaults to process.env. */
+	env?: NodeJS.ProcessEnv;
 }
 
 export async function runMcpServer(options: RunMcpServerOptions = {}): Promise<number> {
@@ -331,6 +361,7 @@ export async function runMcpServer(options: RunMcpServerOptions = {}): Promise<n
 	const error = options.error ?? process.stderr;
 	const commands = options.commands ?? allCommands;
 	const executor = options.executor ?? defaultCliExecutor;
+	const env = options.env ?? process.env;
 	const events =
 		options.events ??
 		new McpEventHub({
@@ -373,13 +404,13 @@ export async function runMcpServer(options: RunMcpServerOptions = {}): Promise<n
 				if (Array.isArray(parsed)) {
 					const responses = [];
 					for (const entry of parsed) {
-						const response = await handleMcpMessage(entry, { commands, executor, events });
+						const response = await handleMcpMessage(entry, { commands, executor, events, env });
 						if (response !== null) responses.push(response);
 					}
 					if (responses.length) await write(responses);
 					return;
 				}
-				const response = await handleMcpMessage(parsed, { commands, executor, events });
+				const response = await handleMcpMessage(parsed, { commands, executor, events, env });
 				if (response !== null) await write(response);
 			} catch (handlerError) {
 				await write(

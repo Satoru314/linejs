@@ -80,6 +80,7 @@ const groupCommand: CommandSpec = {
 	args: [{ name: "chatMid", description: "Group chat MID.", required: true }],
 	examples: ["line call group cxxxxxxxx"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		const chatMid = context.requireArg(0, "chatMid");
 		return await withClient(context, async ({ client }) => {
@@ -95,6 +96,7 @@ const urlListCommand: CommandSpec = {
 	category: "Calls",
 	examples: ["line call url list"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		return await withClient(context, async ({ base }) => {
 			return await base.call.getGroupCallUrls({} as never);
@@ -127,6 +129,7 @@ const urlGetCommand: CommandSpec = {
 	args: [{ name: "ticket", description: "Group call URL ticket.", required: true }],
 	examples: ["line call url get TICKET"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		const ticket = context.requireArg(0, "ticket");
 		return await withClient(context, async ({ client }) => {
