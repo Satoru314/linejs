@@ -150,7 +150,6 @@ const downloadCommand: CommandSpec = {
 	],
 	examples: ["line moa download --chat-id cxxxxxxxx --album-id 123 --oid abc --out ./photo.jpg"],
 	auth: true,
-	readOnly: true,
 	async run(context) {
 		const chatId = context.requireString("chat-id", "Missing --chat-id");
 		const albumId = context.requireString("album-id", "Missing --album-id");

@@ -20,7 +20,6 @@ const listCommand: CommandSpec = {
 	],
 	examples: ["line storage list", "line storage list --values --json"],
 	auth: false,
-	readOnly: true,
 	async run(context) {
 		const store = await openStore(context);
 		const includeValues = context.getBool("values");
@@ -59,7 +58,6 @@ const getCommand: CommandSpec = {
 	args: [{ name: "key", description: "Storage key.", required: true }],
 	examples: ["line storage get reqseq"],
 	auth: false,
-	readOnly: true,
 	async run(context) {
 		const store = await openStore(context);
 		const key = context.requireArg(0, "key");
@@ -156,7 +154,6 @@ const exportCommand: CommandSpec = {
 	options: [outOption("Output file (required).")],
 	examples: ["line storage export --out ./storage.json"],
 	auth: false,
-	readOnly: true,
 	async run(context) {
 		const store = await openStore(context);
 		const out = context.requireString("out", "Missing --out");

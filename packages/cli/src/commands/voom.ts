@@ -30,7 +30,6 @@ const tokenCommand: CommandSpec = {
 	args: [{ name: "channel", description: channels.join(", "), required: true }],
 	examples: ["line voom token TIMELINE"],
 	auth: true,
-	readOnly: true,
 	async run(context) {
 		const channel = requireChannel(context.requireArg(0, "channel"));
 		return await withClient(context, async ({ client }) => {

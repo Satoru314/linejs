@@ -509,7 +509,6 @@ const messageDataCommand: CommandSpec = {
 	],
 	examples: ["line square message-data mxxxxxxxx 123 --out ./photo.jpg"],
 	auth: true,
-	readOnly: true,
 	async run(context) {
 		const squareChatMid = context.requireArg(0, "squareChatMid");
 		const messageId = context.requireArg(1, "messageId");

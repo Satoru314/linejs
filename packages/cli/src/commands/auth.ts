@@ -240,7 +240,6 @@ const tokenCommand: CommandSpec = {
 	category: "Authentication",
 	examples: ["line auth token", "line auth token --json"],
 	auth: false,
-	readOnly: true,
 	async run(context) {
 		const store = await ProfileStore.open(context.settings.profile.path, {
 			name: context.settings.profile.name,

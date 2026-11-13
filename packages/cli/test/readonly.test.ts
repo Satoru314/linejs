@@ -7,7 +7,12 @@ import { runCli } from "../src/cli.ts";
 import { CliError } from "../src/errors.ts";
 import { EXECUTE_TOOL_NAME, LIST_TOOL_NAME, handleMcpMessage } from "../src/mcp/server.ts";
 import { ProfileStore } from "../src/profile-store.ts";
-import { assertReadOnlyApiCall, assertReadOnlyCommand, isReadOnlyMode } from "../src/readonly.ts";
+import {
+	assertReadOnlyApiCall,
+	assertReadOnlyCommand,
+	isReadOnlyMode,
+	READONLY_DENIED_API_METHODS,
+} from "../src/readonly.ts";
 import { findCommandByName } from "../src/registry.ts";
 
 function output() {
@@ -63,6 +68,24 @@ test("read-only commands are allowlisted", () => {
 	}
 });
 
+test("secret-returning and file-writing commands are not read-only", () => {
+	const secretNames = [
+		"auth token",
+		"liff token",
+		"liff view",
+		"voom token",
+		"storage list",
+		"storage get",
+		"storage export",
+		"moa download",
+		"messages data",
+		"square message-data",
+	];
+	for (const name of secretNames) {
+		assert.notEqual(findCommandByName(name)?.readOnly, true, name);
+	}
+});
+
 test("read-only guard rejects writes with the command name and env var", () => {
 	const send = findCommandByName("chats send")!;
 	assert.throws(
@@ -89,6 +112,60 @@ test("api call allows only get/fetch methods in read-only mode", () => {
 			error.message.includes("sendMessage") &&
 			error.message.includes("LINEJS_READONLY"),
 	);
+});
+
+test("api call denies getter-style methods that return secrets", () => {
+	assert.equal(READONLY_DENIED_API_METHODS.includes("getE2EESelfKeyData"), true);
+	assert.equal(READONLY_DENIED_API_METHODS.includes("getToken"), true);
+	for (const method of [
+		"get",
+		"getAccessToken",
+		"getE2EEGroupSharedKey",
+		"getE2EESelfKeyData",
+		"getLiffToken",
+		"getToken",
+	]) {
+		assert.throws(
+			() => assertReadOnlyApiCall("api call", method, true),
+			(error) =>
+				error instanceof CliError &&
+				error.code === "READ_ONLY" &&
+				error.message.includes(method) &&
+				error.message.includes("LINEJS_READONLY"),
+			method,
+		);
+	}
+	assert.doesNotThrow(() => assertReadOnlyApiCall("api call", "getContactsV2", true));
+	assert.doesNotThrow(() => assertReadOnlyApiCall("api call", "getE2EESelfKeyData", false));
+});
+
+test("runCli rejects secret-returning commands before loading the profile", async () => {
+	for (const args of [
+		["auth", "token", "--json"],
+		["storage", "get", "reqseq", "--json"],
+		["liff", "token", "--json"],
+	]) {
+		const captured = output();
+		const result = await runCli(args, captured.options);
+		assert.equal(result.exitCode, 1, args.join(" "));
+		const parsed = JSON.parse(captured.stderr.join(""));
+		assert.equal(parsed.error.code, "READ_ONLY", args.join(" "));
+		assert.match(parsed.error.message, /LINEJS_READONLY/);
+	}
+});
+
+test("runCli rejects getter-style api calls that return secrets", async () => {
+	for (const method of ["getE2EESelfKeyData", "getToken", "get"]) {
+		const captured = output();
+		const result = await runCli(
+			["api", "call", "e2ee", method, "--args", "{}", "--json"],
+			captured.options,
+		);
+		assert.equal(result.exitCode, 1, method);
+		const parsed = JSON.parse(captured.stderr.join(""));
+		assert.equal(parsed.error.code, "READ_ONLY", method);
+		assert.match(parsed.error.message, new RegExp(method));
+	}
 });
 
 test("runCli rejects write commands before loading the profile", async () => {

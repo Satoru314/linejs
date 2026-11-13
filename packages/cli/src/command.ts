@@ -22,7 +22,11 @@ export interface CommandSpec {
 	longRunning?: boolean;
 	/** Defaults to true. Set false to reject the command from MCP. */
 	mcp?: boolean;
-	/** Only commands with readOnly: true may run when LINEJS_READONLY=1. */
+	/**
+	 * Only commands with readOnly: true may run when LINEJS_READONLY=1.
+	 * Set it only for commands that do not change state and do not return
+	 * secrets (tokens, keys, sessions).
+	 */
 	readOnly?: boolean;
 	/** Do not print the command result (streaming/protocol commands). */
 	silent?: boolean;

@@ -103,18 +103,27 @@ Run `line commands` or `line commands --json` for the full command list.
 Set `LINEJS_READONLY=1` to deny every command that is not explicitly marked as
 read-only. This is an allowlist: a command without `readOnly: true` in its
 `CommandSpec` is rejected even if it happens to be harmless, so new commands
-stay safe until they are reviewed.
+stay safe until they are reviewed. Mark a command as read-only only when it
+does not change state **and** does not return secrets such as tokens, keys, or
+sessions. Commands that print secrets (`auth token`, `liff token`, `liff view`,
+`voom token`, `storage get`, `storage list --values`, `storage export`) and
+commands that write local files (`moa download`, `messages data`,
+`square message-data`) are therefore not read-only.
 
 ```sh
 LINEJS_READONLY=1 line chats list --json
 LINEJS_READONLY=1 line chats send u... "hello"   # READ_ONLY error
 ```
 
-`api call` is allowed only for method names that start with `get` or `fetch`:
+`api call` is allowed only for method names that start with `get` or `fetch`,
+and even then a known list of credential-returning methods is denied (for
+example `getToken`, `getLiffToken`, `getE2EESelfKeyData`,
+`getE2EEGroupSharedKey`, and the generic `get` storage accessor):
 
 ```sh
 LINEJS_READONLY=1 line api call talk getMessageBoxes --args '{"messageBoxListRequest":{}}'
 LINEJS_READONLY=1 line api call talk sendMessage --args '{}'   # READ_ONLY error
+LINEJS_READONLY=1 line api call e2ee getE2EESelfKeyData --args '{"mid":"u..."}'   # READ_ONLY error
 ```
 
 The MCP server applies the same rule to `execute_linejs_cli`, and

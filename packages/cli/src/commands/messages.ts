@@ -303,7 +303,6 @@ const dataCommand: CommandSpec = {
 	options: dataOptions,
 	examples: ["line messages data cxxxxxxxx 123456789 --out ./photo.jpg"],
 	auth: true,
-	readOnly: true,
 	run: downloadTalkMessageData,
 	format(value) {
 		const result = value as { path: string; size: number; type: string };
