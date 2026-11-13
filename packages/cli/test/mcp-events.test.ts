@@ -112,10 +112,15 @@ function subscribeParams(overrides: Record<string, unknown> = {}) {
 	};
 }
 
-async function call(hub: McpEventHub, method: string, params: Record<string, unknown>) {
+async function call(
+	hub: McpEventHub,
+	method: string,
+	params: Record<string, unknown>,
+	options: Parameters<typeof handleMcpMessage>[1] = {},
+) {
 	return (await handleMcpMessage(
 		{ jsonrpc: "2.0", id: 1, method, params },
-		{ events: hub },
+		{ events: hub, ...options },
 	)) as Record<string, unknown>;
 }
 
@@ -321,6 +326,34 @@ test("includeText=false keeps user text out of the payload", async () => {
 	const body = transport.deliveries[0]!.body as { data: Record<string, unknown> };
 	assert.equal("text" in body.data, false);
 	assert.equal(body.data.messageId, "msg_1");
+});
+
+test("events stay usable in read-only mode and keep secrets out of payloads", async () => {
+	const { hub, transport, source } = createHub();
+	const subscribed = await call(hub, "events/subscribe", subscribeParams(), {
+		env: { LINEJS_READONLY: "1" },
+	});
+	assert.match((subscribed.result as { id: string }).id, /^sub_[0-9a-f]{16}$/);
+
+	source.emit(
+		record({
+			data: {
+				messageId: "msg_1",
+				chatId: "c123",
+				from: "u456",
+				contentType: "TEXT",
+				text: "hello",
+				accessToken: "secret-token",
+				e2eeKey: "secret-key",
+			},
+		}),
+	);
+	await hub.flushDeliveries();
+	const data = transport.deliveries[0]!.body.data as Record<string, unknown>;
+	assert.deepEqual(
+		Object.keys(data).sort(),
+		["chatId", "contentType", "from", "messageId", "receivedAt", "text"].sort(),
+	);
 });
 
 test("failed deliveries retry with a fresh signature, and 410 is final", async () => {

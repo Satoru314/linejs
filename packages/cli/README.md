@@ -128,7 +128,16 @@ LINEJS_READONLY=1 line api call e2ee getE2EESelfKeyData --args '{"mid":"u..."}' 
 
 The MCP server applies the same rule to `execute_linejs_cli`, and
 `list_linejs_cli` reports each command's `readOnly` flag plus an
-`mcpExecutable` value that is `false` for rejected commands.
+`mcpExecutable` value that is `false` for rejected commands. `line mcp` itself
+stays available in read-only mode because the server only forwards calls; every
+`execute_linejs_cli` call is checked against the same allowlist. MCP Events
+stay available too: `line listen` is read-only, subscriptions live in memory
+only, and webhook payloads never contain tokens or keys (`includeText: false`
+also removes user-authored text).
+
+```sh
+LINEJS_READONLY=1 line mcp
+```
 
 ## Commands
 
