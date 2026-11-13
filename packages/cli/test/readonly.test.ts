@@ -49,6 +49,7 @@ test("read-only commands are allowlisted", () => {
 
 	const readOnlyNames = [
 		"chats list",
+		"chats recent",
 		"chats get",
 		"chats messages",
 		"contacts list",

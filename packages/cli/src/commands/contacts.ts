@@ -2,7 +2,13 @@ import type { User } from "@evex-dev/linejs";
 import type { CommandSpec } from "../command.ts";
 import { UsageError } from "../errors.ts";
 import { withClient } from "../session.ts";
-import { asRecord, summaryLine, userSummary } from "./shared.ts";
+import {
+	asRecord,
+	contactProfileSummary,
+	fetchBotContacts,
+	summaryLine,
+	userSummary,
+} from "./shared.ts";
 
 function contactSummaryFromRaw(raw: unknown): Record<string, unknown> {
 	const record = asRecord(raw);
@@ -30,28 +36,36 @@ const listCommand: CommandSpec = {
 			valueName: "text",
 			description: "Filter by text in name or status.",
 		},
+		{
+			name: "include-bots",
+			type: "boolean",
+			description: "Include official accounts (BOT) that are not in the friend list.",
+		},
 	],
-	examples: ["line contacts list", "line contacts list --json"],
+	examples: ["line contacts list", "line contacts list --include-bots --json"],
 	auth: true,
 	readOnly: true,
 	async run(context) {
 		return await withClient(context, async ({ client }) => {
 			const users = await client.fetchUsers();
+			const rows = users.map((user) => userSummary(user, context.json));
+			if (context.getBool("include-bots")) {
+				const bots = await fetchBotContacts(client, new Set(users.map((user) => user.mid)));
+				rows.push(...bots.map((bot) => contactProfileSummary(bot)));
+			}
 			const filter = context.getString("status")?.toLowerCase();
-			const rows = users
-				.map((user) => userSummary(user, context.json))
-				.filter((row) => {
-					if (!filter) return true;
-					return (
-						String(row.displayName ?? "")
-							.toLowerCase()
-							.includes(filter) ||
-						String(row.statusMessage ?? "")
-							.toLowerCase()
-							.includes(filter)
-					);
-				});
-			return { contacts: rows };
+			const filtered = rows.filter((row) => {
+				if (!filter) return true;
+				return (
+					String(row.displayName ?? "")
+						.toLowerCase()
+						.includes(filter) ||
+					String(row.statusMessage ?? "")
+						.toLowerCase()
+						.includes(filter)
+				);
+			});
+			return { contacts: filtered };
 		});
 	},
 	format(value) {

@@ -22,6 +22,7 @@ line auth login
 line auth status
 line profile get
 line contacts list
+line chats recent
 line chats list
 line chats messages c... -n 20
 line chats send c... "Hello from linejs"
@@ -125,9 +126,12 @@ The MCP server applies the same rule to `execute_linejs_cli`, and
 - **auth**: `login`, `status`, `token`, `logout`, `profiles`
 - **profile**: `get`, `update`, `image`, `background` (`get` uses the cached profile; add `--check-session` for a fresh `getProfile()`)
 - **contacts**: `list`, `get`, `add`, `search`, `rename`, `favorite`, `mute`,
-  `hide`, `calendar`, `block`, `unblock`, `blocked`
-- **chats**: `list`, `get`, `messages`, `send`, `send-media`, `compact`,
+  `hide`, `calendar`, `block`, `unblock`, `blocked` (`list --include-bots` also
+  returns official accounts that are not in the friend list)
+- **chats**: `list`, `recent`, `get`, `messages`, `send`, `send-media`, `compact`,
   `create`, `invite`, `kick`, `leave`, `rename`, `bgm get`, `bgm set`
+  (`recent` reads the active inbox and includes 1:1 BOT chats; `list` only
+  returns joined groups and rooms)
 - **messages**: `react`, `cancel-reaction`, `unsend`, `read`, `reply`, `show`,
   `pin`, `data`
 - **square**: `list`, `get`, `chats`, `chat-get`, `chat-members`,

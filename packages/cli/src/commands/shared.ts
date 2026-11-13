@@ -69,6 +69,75 @@ export function userChatSummary(mid: string): Record<string, unknown> {
 	};
 }
 
+export interface ContactProfile {
+	mid: string;
+	displayName?: string;
+	statusMessage?: string;
+	isBot: boolean;
+}
+
+/**
+ * `getContactsV3` returns the explicit `userType` discriminator from
+ * linejs-types (`USER` or `BOT`). We use it instead of a name or `capableBuddy`
+ * heuristic, and the same bulk response supplies the display name and status
+ * message.
+ */
+function contactProfileFromRaw(raw: unknown): ContactProfile {
+	const record = asRecord(raw);
+	const profile = asRecord(record.targetProfileDetail);
+	const status = asRecord(profile.statusMessage);
+	return {
+		mid: String(record.targetUserMid ?? record.mid ?? ""),
+		displayName: pickString(profile, "profileName") ?? pickString(record, "displayName"),
+		statusMessage: pickString(status, "value") ?? pickString(record, "statusMessage"),
+		isBot: record.userType === "BOT" || record.userType === 2,
+	};
+}
+
+/**
+ * Bulk contact lookup. All mids are fetched in batches of 100, never one by
+ * one, so `chats recent` can resolve a whole inbox in one or two requests.
+ */
+export async function fetchContactProfiles(
+	client: Client,
+	mids: readonly string[],
+): Promise<Map<string, ContactProfile>> {
+	const unique = [...new Set(mids.filter(isUserMid))];
+	const profiles = new Map<string, ContactProfile>();
+	for (let index = 0; index < unique.length; index += 100) {
+		const response = await client.base.relation.getContactsV3({
+			mids: unique.slice(index, index + 100),
+		});
+		for (const raw of response.responses) {
+			const profile = contactProfileFromRaw(raw);
+			if (profile.mid) profiles.set(profile.mid, profile);
+		}
+	}
+	return profiles;
+}
+
+/** Fetch official accounts that are not already in the friend list. */
+export async function fetchBotContacts(
+	client: Client,
+	excludeMids: ReadonlySet<string>,
+): Promise<ContactProfile[]> {
+	const allMids = await client.base.talk.getAllContactIds({ syncReason: "INTERNAL" });
+	const profiles = await fetchContactProfiles(
+		client,
+		allMids.filter((mid) => !excludeMids.has(mid)),
+	);
+	return [...profiles.values()].filter((profile) => profile.isBot);
+}
+
+export function contactProfileSummary(profile: ContactProfile): Record<string, unknown> {
+	return {
+		mid: profile.mid,
+		displayName: profile.displayName,
+		statusMessage: profile.statusMessage,
+		...(profile.isBot ? { bot: true } : {}),
+	};
+}
+
 /**
  * Fetch recent talk messages for a 1:1 (user) mid via the message-box APIs.
  * Group/room mids keep using `Chat.fetchMessages`; this is the user-mid

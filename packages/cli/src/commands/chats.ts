@@ -1,10 +1,13 @@
 import type { CommandSpec } from "../command.ts";
+import type { Client } from "@evex-dev/linejs";
 import { UsageError } from "../errors.ts";
 import { readFileAsBlob } from "../files.ts";
 import { serialize } from "../output.ts";
 import { withClient } from "../session.ts";
 import {
 	chatSummary,
+	type ContactProfile,
+	fetchContactProfiles,
 	fetchUserTalkMessages,
 	isUserMid,
 	limitOption,
@@ -48,6 +51,114 @@ const listCommand: CommandSpec = {
 		for (const chat of chats) {
 			lines.push(
 				`${String(chat.mid ?? "")}  ${String(chat.name ?? "")}  ${String(chat.type ?? "")}`,
+			);
+		}
+		return lines.join("\n");
+	},
+};
+
+export type RecentChatKind = "USER" | "BOT" | "GROUP" | "ROOM";
+
+export interface RecentChat {
+	mid: string;
+	kind: RecentChatKind;
+	name: string;
+	lastMessageTime: string | null;
+	unreadCount: number;
+	statusMessage?: string;
+}
+
+function int64Value(value: unknown): number | undefined {
+	if (typeof value === "number" && Number.isFinite(value)) return value;
+	if (typeof value === "bigint") return Number(value);
+	if (typeof value === "string" && /^\d+$/.test(value)) return Number(value);
+	return undefined;
+}
+
+function isoTime(milliseconds: number | undefined): string | null {
+	if (milliseconds === undefined || !Number.isFinite(milliseconds)) return null;
+	return new Date(milliseconds).toISOString();
+}
+
+/**
+ * Build the recent-inbox list from `getMessageBoxes`. User mids are resolved
+ * in one bulk contact lookup and group/room names in one bulk chat lookup.
+ */
+export async function fetchRecentChats(client: Client, limit: number): Promise<RecentChat[]> {
+	const response = await client.base.talk.getMessageBoxes({
+		messageBoxListRequest: {
+			activeOnly: true,
+			withUnreadCount: true,
+			messageBoxCountLimit: limit,
+		},
+	});
+	const boxes = response.messageBoxes ?? [];
+	const userMids = boxes.map((box) => box.id).filter(isUserMid);
+	const chatMids = boxes.map((box) => box.id).filter((mid) => mid.startsWith("c") || mid.startsWith("r"));
+
+	const userProfiles: Map<string, ContactProfile> = userMids.length
+		? await fetchContactProfiles(client, userMids)
+		: new Map();
+	const chatNames = new Map<string, string>();
+	if (chatMids.length) {
+		const { chats } = await client.base.talk.getChats({ chatMids });
+		for (const chat of chats) chatNames.set(chat.chatMid, chat.chatName);
+	}
+
+	const rows = boxes.flatMap((box): Array<RecentChat & { sortTime: number }> => {
+		const mid = box.id;
+		const prefix = mid[0];
+		const profile = userProfiles.get(mid);
+		let kind: RecentChatKind;
+		if (prefix === "u") kind = profile?.isBot ? "BOT" : "USER";
+		else if (prefix === "c") kind = "GROUP";
+		else if (prefix === "r") kind = "ROOM";
+		else return [];
+
+		const sortTime = int64Value(box.lastDeliveredMessageId?.deliveredTime) ?? 0;
+		return [
+			{
+				mid,
+				kind,
+				name: profile?.displayName ?? chatNames.get(mid) ?? mid,
+				lastMessageTime: isoTime(sortTime || undefined),
+				unreadCount: int64Value(box.unreadCount) ?? 0,
+				...(kind === "BOT" && profile?.statusMessage
+					? { statusMessage: profile.statusMessage }
+					: {}),
+				sortTime,
+			},
+		];
+	});
+
+	return rows
+		.sort((a, b) => b.sortTime - a.sortTime)
+		.slice(0, limit)
+		.map(({ sortTime: _sortTime, ...row }) => row);
+}
+
+const recentCommand: CommandSpec = {
+	name: "chats recent",
+	summary: "List recent inbox chats, including 1:1 chats with official accounts (BOT).",
+	category: "Chats",
+	options: [limitOption(20)],
+	examples: ["line chats recent", "line chats recent -n 50 --json"],
+	auth: true,
+	readOnly: true,
+	async run(context) {
+		const limit = context.getNumber("limit") ?? 20;
+		if (limit <= 0) throw new UsageError("--limit must be positive");
+		return await withClient(context, async ({ client }) => {
+			return { chats: await fetchRecentChats(client, limit) };
+		});
+	},
+	format(value) {
+		const chats = (value as { chats: RecentChat[] }).chats;
+		if (!chats.length) return "No recent chats.";
+		const lines = ["MID  KIND  NAME  UNREAD  LAST"];
+		for (const chat of chats) {
+			lines.push(
+				`${chat.mid}  ${chat.kind}  ${chat.name}  ${String(chat.unreadCount)}  ${chat.lastMessageTime ?? ""}`,
 			);
 		}
 		return lines.join("\n");
@@ -510,6 +621,7 @@ const bgmSetCommand: CommandSpec = {
 
 export const chatsCommands: CommandSpec[] = [
 	listCommand,
+	recentCommand,
 	getCommand,
 	messagesCommand,
 	sendCommand,
