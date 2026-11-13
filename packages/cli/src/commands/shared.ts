@@ -204,13 +204,53 @@ export async function fetchTalkMessages(
 	return (await fetchTalkHistory(client, chatMid, limit)).messages;
 }
 
+function countMembers(value: unknown): number | undefined {
+	if (Array.isArray(value)) return value.length;
+	if (value && typeof value === "object") return Object.keys(value).length;
+	return undefined;
+}
+
+/**
+ * `Chat` has no top-level member count. Groups carry one entry per member in
+ * `extra.groupExtra.memberMids`; rooms use the peer/peerApp extras. Return
+ * `undefined` when no count is available instead of exposing the whole extra
+ * map as `memberCount`.
+ */
+function chatMemberCount(raw: Record<string, unknown>): number | undefined {
+	if (typeof raw.memberCount === "number" && Number.isFinite(raw.memberCount)) {
+		return raw.memberCount;
+	}
+	const extra = asRecord(raw.extra);
+	const group = asRecord(extra.groupExtra);
+	const peer = asRecord(extra.peerExtra);
+	const peerApp = asRecord(extra.peerAppExtra ?? peer.peerAppExtra);
+	const room = asRecord(extra.roomExtra);
+	const direct = [group.memberCount, peer.memberCount, peerApp.memberCount, room.memberCount];
+	for (const value of direct) {
+		if (typeof value === "number" && Number.isFinite(value)) return value;
+	}
+	const candidates = [
+		group.memberMids,
+		peer.memberMids,
+		peerApp.memberMids,
+		room.memberMids,
+		extra.memberMids,
+	];
+	for (const candidate of candidates) {
+		const count = countMembers(candidate);
+		if (count !== undefined) return count;
+	}
+	return undefined;
+}
+
 export function chatSummary(chat: Chat, includeRaw = false): Record<string, unknown> {
 	const raw = asRecord(chat.raw);
+	const memberCount = chatMemberCount(raw);
 	return {
 		mid: chat.mid,
 		name: chat.name,
 		type: raw.type,
-		memberCount: raw.memberCount ?? raw.extra,
+		...(memberCount === undefined ? {} : { memberCount }),
 		...(includeRaw ? { raw: chat.raw } : {}),
 	};
 }

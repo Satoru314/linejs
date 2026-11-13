@@ -46,6 +46,59 @@ test("chat summaries are small by default", () => {
 	assert.deepEqual(summarizeChats([CHAT], false), [chatSummary(CHAT)]);
 });
 
+test("chat summaries count group members without exposing extra", () => {
+	const group = {
+		mid: "c-anonymous-group",
+		name: "Anonymous group",
+		raw: {
+			type: "GROUP",
+			extra: {
+				groupExtra: {
+					invitationTicket: "fake-invitation-ticket",
+					memberMids: {
+						"u-member-one": 1,
+						"u-member-two": 2,
+						"u-member-three": 3,
+					},
+					inviteeMids: {},
+				},
+			},
+		},
+	} as unknown as Chat;
+	const summary = chatSummary(group);
+	assert.equal(summary.memberCount, 3);
+	assert.equal("extra" in summary, false);
+	const json = JSON.stringify(summary);
+	assert.equal(json.includes("u-member"), false);
+	assert.equal(json.includes("fake-invitation-ticket"), false);
+	assert.equal("raw" in chatSummary(group, true), true);
+});
+
+test("chat summaries count room members from peer extras when present", () => {
+	const room = {
+		mid: "r-anonymous-room",
+		name: "Anonymous room",
+		raw: {
+			type: "ROOM",
+			extra: {
+				peerAppExtra: {
+					memberMids: { "u-member-one": 1, "u-member-two": 2 },
+				},
+			},
+		},
+	} as unknown as Chat;
+	assert.equal(chatSummary(room).memberCount, 2);
+});
+
+test("chat summaries omit memberCount when it cannot be counted", () => {
+	const chat = {
+		mid: "c-anonymous-unknown",
+		name: "Unknown group",
+		raw: { type: "GROUP", extra: {} },
+	} as unknown as Chat;
+	assert.equal("memberCount" in chatSummary(chat), false);
+});
+
 test("--raw is the only way to include raw chat data", () => {
 	const summary = chatSummary(CHAT, true);
 	assert.deepEqual(Object.keys(summary).sort(), ["memberCount", "mid", "name", "raw", "type"]);

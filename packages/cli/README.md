@@ -210,9 +210,11 @@ contains `"historyAvailable": false` because LINE may not expose older messages
 through this API. Real missing-chat or permission errors are returned as-is.
 
 JSON output stays small by default: `chats list` returns only `mid`, `name`,
-`type`, and `memberCount`. Pass `--raw` on commands that expose it (`chats
-list|get|messages`, `contacts list|get|search`, `messages show`, and the
-`square` read commands) to include the full LINEJS object.
+`type`, and a numeric `memberCount` (omitted when the count is unknown).
+Group and room member maps are not included; pass `--raw` on commands that
+expose it (`chats list|get|messages`, `contacts list|get|search`,
+`messages show`, and the `square` read commands) to include the full LINEJS
+object.
 
 ### Listening
 
