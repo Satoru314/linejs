@@ -214,7 +214,8 @@ JSON output stays small by default: `chats list` returns only `mid`, `name`,
 Group and room member maps are not included; pass `--raw` on commands that
 expose it (`chats list|get|messages`, `contacts list|get|search`,
 `messages show`, and the `square` read commands) to include the full LINEJS
-object.
+object. `chats recent` fills a BOT's `statusMessage` from `getContactsV2` when
+`getContactsV3` leaves it empty.
 
 ### Listening
 

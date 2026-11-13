@@ -108,6 +108,11 @@ function contactProfileFromRaw(raw: unknown): ContactProfile {
 /**
  * Bulk contact lookup. All mids are fetched in batches of 100, never one by
  * one, so `chats recent` can resolve a whole inbox in one or two requests.
+ *
+ * `getContactsV3` leaves `targetProfileDetail.statusMessage` empty for some
+ * official accounts. Their legacy `getContactsV2` contact record still has a
+ * plain `statusMessage` field, so fetch that record only for BOTs that have no
+ * status yet.
  */
 export async function fetchContactProfiles(
 	client: Client,
@@ -122,6 +127,20 @@ export async function fetchContactProfiles(
 		for (const raw of response.responses) {
 			const profile = contactProfileFromRaw(raw);
 			if (profile.mid) profiles.set(profile.mid, profile);
+		}
+	}
+
+	const botsWithoutStatus = [...profiles.values()]
+		.filter((profile) => profile.isBot && !profile.statusMessage)
+		.map((profile) => profile.mid);
+	for (let index = 0; index < botsWithoutStatus.length; index += 100) {
+		const response = await client.base.talk.getContactsV2({
+			mids: botsWithoutStatus.slice(index, index + 100),
+		});
+		for (const [mid, entry] of Object.entries(response.contacts ?? {})) {
+			const statusMessage = pickString(asRecord(asRecord(entry).contact), "statusMessage");
+			const profile = profiles.get(mid);
+			if (profile && statusMessage) profile.statusMessage = statusMessage;
 		}
 	}
 	return profiles;

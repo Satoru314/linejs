@@ -100,6 +100,56 @@ test("chats recent merges users, BOTs, groups, and rooms by last message time", 
 	assert.equal(chats[1]!.statusMessage, undefined);
 });
 
+test("chats recent falls back to getContactsV2 for a BOT status message", async () => {
+	let contactV2Mids: string[] = [];
+	const client = {
+		base: {
+			talk: {
+				async getMessageBoxes() {
+					return {
+						messageBoxes: [
+							{
+								id: "u-bot",
+								unreadCount: 0,
+								lastDeliveredMessageId: { deliveredTime: 1000, messageId: 1 },
+							},
+						],
+					};
+				},
+				async getChats() {
+					return { chats: [] };
+				},
+				async getContactsV2({ mids }: { mids: string[] }) {
+					contactV2Mids = mids;
+					return {
+						contacts: {
+							"u-bot": {
+								contact: {
+									mid: "u-bot",
+									displayName: "Official account",
+									statusMessage: "Official account description",
+								},
+							},
+						},
+					};
+				},
+			},
+			relation: {
+				async getContactsV3() {
+					return {
+						responses: [contact("u-bot", "Official account", "BOT")],
+					};
+				},
+			},
+		},
+	} as never as Client;
+
+	const chats = await fetchRecentChats(client, 20);
+	assert.deepEqual(contactV2Mids, ["u-bot"]);
+	assert.equal(chats[0]!.kind, "BOT");
+	assert.equal(chats[0]!.statusMessage, "Official account description");
+});
+
 test("fetchBotContacts returns only non-friend official accounts", async () => {
 	let contactMids: string[] = [];
 	const client = {
