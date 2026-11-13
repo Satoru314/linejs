@@ -8,6 +8,7 @@ import {
 	fetchTalkMessages,
 	limitOption,
 	outOption,
+	RAW_OPTION,
 	resolveReaction,
 	talkMessageSummary,
 } from "./shared.ts";
@@ -180,14 +181,15 @@ const showCommand: CommandSpec = {
 		{ name: "chatMid", description: "Chat MID (c..., r..., or u... for 1:1).", required: true },
 		{ name: "messageId", description: "Message id.", required: true },
 	],
-	options: [limitOption(100)],
-	examples: ["line messages show cxxxxxxxx 123456789"],
+	options: [limitOption(100), RAW_OPTION],
+	examples: ["line messages show cxxxxxxxx 123456789", "line messages show uxxxxxxxx 123 --raw"],
 	auth: true,
 	readOnly: true,
 	async run(context) {
 		const chatMid = context.requireArg(0, "chatMid");
 		const messageId = context.requireArg(1, "messageId");
 		const limit = context.getNumber("limit") ?? 100;
+		const includeRaw = context.getBool("raw");
 		return await withClient(context, async ({ client }) => {
 			const message = await resolveTalkMessage(client, chatMid, messageId, limit);
 			const extra: Record<string, unknown> = {};
@@ -213,9 +215,9 @@ const showCommand: CommandSpec = {
 				extra.replyTarget = message.getReplyTarget()?.id;
 			} catch {}
 			return {
-				...talkMessageSummary(message, context.json),
+				...talkMessageSummary(message, includeRaw),
 				...extra,
-				...(context.json ? { raw: message.raw } : {}),
+				...(includeRaw ? { raw: message.raw } : {}),
 			};
 		});
 	},

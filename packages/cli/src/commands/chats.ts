@@ -1,5 +1,5 @@
 import type { CommandSpec } from "../command.ts";
-import type { Client } from "@evex-dev/linejs";
+import type { Chat, Client } from "@evex-dev/linejs";
 import { UsageError } from "../errors.ts";
 import { readFileAsBlob } from "../files.ts";
 import { serialize } from "../output.ts";
@@ -11,6 +11,7 @@ import {
 	fetchTalkHistory,
 	isUserMid,
 	limitOption,
+	RAW_OPTION,
 	requireJsonObject,
 	requireStringRecord,
 	resolveContentType,
@@ -18,30 +19,38 @@ import {
 	userChatSummary,
 } from "./shared.ts";
 
+export function summarizeChats(
+	chats: readonly Chat[],
+	includeRaw: boolean,
+	filter?: string,
+): Array<Record<string, unknown>> {
+	const normalized = filter?.toLowerCase();
+	return chats
+		.map((chat) => chatSummary(chat, includeRaw))
+		.filter(
+			(row) =>
+				!normalized ||
+				String(row.name ?? "")
+					.toLowerCase()
+					.includes(normalized),
+		);
+}
+
 const listCommand: CommandSpec = {
 	name: "chats list",
 	summary: "List group and room chats.",
 	category: "Chats",
 	options: [
 		{ name: "name", type: "string", valueName: "text", description: "Filter by chat name." },
+		RAW_OPTION,
 	],
-	examples: ["line chats list", "line chats list --json"],
+	examples: ["line chats list", "line chats list --json", "line chats list --raw"],
 	auth: true,
 	readOnly: true,
 	async run(context) {
 		return await withClient(context, async ({ client }) => {
 			const chats = await client.fetchJoinedChats();
-			const filter = context.getString("name")?.toLowerCase();
-			const rows = chats
-				.map((chat) => chatSummary(chat, context.json))
-				.filter(
-					(row) =>
-						!filter ||
-						String(row.name ?? "")
-							.toLowerCase()
-							.includes(filter),
-				);
-			return { chats: rows };
+			return { chats: summarizeChats(chats, context.getBool("raw"), context.getString("name")) };
 		});
 	},
 	format(value) {
@@ -170,14 +179,15 @@ const getCommand: CommandSpec = {
 	summary: "Show one chat and its members.",
 	category: "Chats",
 	args: [{ name: "chatMid", description: "Chat MID (c... or r...).", required: true }],
-	examples: ["line chats get cxxxxxxxx"],
+	options: [RAW_OPTION],
+	examples: ["line chats get cxxxxxxxx", "line chats get cxxxxxxxx --raw"],
 	auth: true,
 	readOnly: true,
 	async run(context) {
 		const chatMid = context.requireArg(0, "chatMid");
 		return await withClient(context, async ({ client }) => {
 			const chat = await client.getChat(chatMid);
-			return chatSummary(chat, true);
+			return chatSummary(chat, context.getBool("raw"));
 		});
 	},
 	format(value) {
@@ -201,18 +211,23 @@ const messagesCommand: CommandSpec = {
 	args: [
 		{ name: "chatMid", description: "Chat MID (c..., r..., or u... for 1:1).", required: true },
 	],
-	options: [limitOption(20)],
-	examples: ["line chats messages cxxxxxxxx -n 50", "line chats messages cxxxxxxxx --json"],
+	options: [limitOption(20), RAW_OPTION],
+	examples: [
+		"line chats messages cxxxxxxxx -n 50",
+		"line chats messages cxxxxxxxx --json",
+		"line chats messages uxxxxxxxx --raw",
+	],
 	auth: true,
 	readOnly: true,
 	async run(context) {
 		const chatMid = context.requireArg(0, "chatMid");
 		const limit = context.getNumber("limit") ?? 20;
+		const includeRaw = context.getBool("raw");
 		if (limit <= 0) throw new UsageError("--limit must be positive");
 		return await withClient(context, async ({ client }) => {
 			const history = await fetchTalkHistory(client, chatMid, limit);
 			const messages = history.messages.map((message) =>
-				talkMessageSummary(message, context.json),
+				talkMessageSummary(message, includeRaw),
 			);
 			if (isUserMid(chatMid)) {
 				return {
@@ -223,7 +238,7 @@ const messagesCommand: CommandSpec = {
 			}
 			const chat = await client.getChat(chatMid);
 			return {
-				chat: chatSummary(chat),
+				chat: chatSummary(chat, includeRaw),
 				messages,
 				historyAvailable: history.historyAvailable,
 			};

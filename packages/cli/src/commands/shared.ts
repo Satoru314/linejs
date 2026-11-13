@@ -38,6 +38,12 @@ export function outOption(description = "Write the result to this file."): Optio
 	};
 }
 
+export const RAW_OPTION: OptionSpec = {
+	name: "raw",
+	type: "boolean",
+	description: "Include the raw LINEJS object in the output.",
+};
+
 export function pickString(record: unknown, key: string): string | undefined {
 	if (!record || typeof record !== "object") return undefined;
 	const value = (record as Record<string, unknown>)[key];
@@ -205,9 +211,6 @@ export function chatSummary(chat: Chat, includeRaw = false): Record<string, unkn
 		name: chat.name,
 		type: raw.type,
 		memberCount: raw.memberCount ?? raw.extra,
-		notificationDisabled: raw.notificationDisabled,
-		picturePath: raw.picturePath,
-		createdTime: raw.createdTime,
 		...(includeRaw ? { raw: chat.raw } : {}),
 	};
 }
