@@ -22,6 +22,8 @@ export interface CommandSpec {
 	longRunning?: boolean;
 	/** Defaults to true. Set false to reject the command from MCP. */
 	mcp?: boolean;
+	/** Only commands with readOnly: true may run when LINEJS_READONLY=1. */
+	readOnly?: boolean;
 	/** Do not print the command result (streaming/protocol commands). */
 	silent?: boolean;
 	examples?: readonly string[];
@@ -48,8 +50,10 @@ export function commandOptions(command: CommandSpec): readonly OptionSpec[] {
 	return command.options ?? [];
 }
 
-export function isMcpExecutable(command: CommandSpec): boolean {
-	return command.mcp !== false && !command.longRunning;
+export function isMcpExecutable(command: CommandSpec, readOnlyMode = false): boolean {
+	return (
+		command.mcp !== false && !command.longRunning && (!readOnlyMode || Boolean(command.readOnly))
+	);
 }
 
 export interface CommandMetadata {
@@ -61,13 +65,18 @@ export interface CommandMetadata {
 	args: readonly CommandArgument[];
 	options: readonly OptionSpec[];
 	auth: boolean;
+	readOnly: boolean;
 	longRunning: boolean;
 	mcpExecutable: boolean;
 	silent: boolean;
 	examples: readonly string[];
 }
 
-export function commandMetadata(command: CommandSpec, includeOptions = true): CommandMetadata {
+export function commandMetadata(
+	command: CommandSpec,
+	includeOptions = true,
+	readOnlyMode = false,
+): CommandMetadata {
 	return {
 		name: command.name,
 		summary: command.summary,
@@ -77,8 +86,9 @@ export function commandMetadata(command: CommandSpec, includeOptions = true): Co
 		args: command.args ?? [],
 		options: includeOptions ? commandOptions(command) : [],
 		auth: Boolean(command.auth),
+		readOnly: Boolean(command.readOnly),
 		longRunning: Boolean(command.longRunning),
-		mcpExecutable: isMcpExecutable(command),
+		mcpExecutable: isMcpExecutable(command, readOnlyMode),
 		silent: Boolean(command.silent),
 		examples: command.examples ?? [],
 	};

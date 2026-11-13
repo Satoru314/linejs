@@ -24,6 +24,7 @@ const tokenCommand: CommandSpec = {
 		"line liff token --liff-id 2006747340-AoraPvdD",
 	],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		const liffId = context.getString("liff-id");
 		return await withClient(context, async ({ client }) => {
@@ -47,6 +48,7 @@ const viewCommand: CommandSpec = {
 	options: commonOptions,
 	examples: ["line liff view --chat-mid cxxxxxxxx"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		const liffId = context.getString("liff-id");
 		return await withClient(context, async ({ client }) => {

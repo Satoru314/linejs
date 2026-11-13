@@ -19,6 +19,7 @@ const listCommand: CommandSpec = {
 	category: "OpenChat (Square)",
 	examples: ["line square list", "line square list --json"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		return await withClient(context, async ({ client }) => {
 			const squares = await client.fetchJoinedSquares();
@@ -41,6 +42,7 @@ const getCommand: CommandSpec = {
 	args: [{ name: "squareMid", description: "Square MID.", required: true }],
 	examples: ["line square get sxxxxxxxx"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		const squareMid = context.requireArg(0, "squareMid");
 		return await withClient(context, async ({ client }) => {
@@ -60,6 +62,7 @@ const chatsCommand: CommandSpec = {
 	category: "OpenChat (Square)",
 	examples: ["line square chats", "line square chats --json"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		return await withClient(context, async ({ client }) => {
 			const chats = await client.fetchJoinedSquareChats();
@@ -85,6 +88,7 @@ const chatGetCommand: CommandSpec = {
 	args: [{ name: "squareChatMid", description: "Square chat MID.", required: true }],
 	examples: ["line square chat-get mxxxxxxxx"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		const squareChatMid = context.requireArg(0, "squareChatMid");
 		return await withClient(context, async ({ client }) => {
@@ -105,6 +109,7 @@ const chatMembersCommand: CommandSpec = {
 	args: [{ name: "squareChatMid", description: "Square chat MID.", required: true }],
 	examples: ["line square chat-members mxxxxxxxx"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		const squareChatMid = context.requireArg(0, "squareChatMid");
 		return await withClient(context, async ({ client }) => {
@@ -391,6 +396,7 @@ const searchCommand: CommandSpec = {
 	options: [limitOption(20)],
 	examples: ["line square search 'music'"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		const query = context.requireArg(0, "query");
 		const limit = context.getNumber("limit") ?? 20;
@@ -418,6 +424,7 @@ const eventsCommand: CommandSpec = {
 	options: [limitOption(50)],
 	examples: ["line square events mxxxxxxxx -n 50"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		const squareChatMid = context.requireArg(0, "squareChatMid");
 		const limit = context.getNumber("limit") ?? 50;
@@ -494,6 +501,7 @@ const messageDataCommand: CommandSpec = {
 	],
 	examples: ["line square message-data mxxxxxxxx 123 --out ./photo.jpg"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		const squareChatMid = context.requireArg(0, "squareChatMid");
 		const messageId = context.requireArg(1, "messageId");

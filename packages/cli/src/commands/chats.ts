@@ -24,6 +24,7 @@ const listCommand: CommandSpec = {
 	],
 	examples: ["line chats list", "line chats list --json"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		return await withClient(context, async ({ client }) => {
 			const chats = await client.fetchJoinedChats();
@@ -60,6 +61,7 @@ const getCommand: CommandSpec = {
 	args: [{ name: "chatMid", description: "Chat MID (c... or r...).", required: true }],
 	examples: ["line chats get cxxxxxxxx"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		const chatMid = context.requireArg(0, "chatMid");
 		return await withClient(context, async ({ client }) => {
@@ -91,6 +93,7 @@ const messagesCommand: CommandSpec = {
 	options: [limitOption(20)],
 	examples: ["line chats messages cxxxxxxxx -n 50", "line chats messages cxxxxxxxx --json"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		const chatMid = context.requireArg(0, "chatMid");
 		const limit = context.getNumber("limit") ?? 20;
@@ -461,6 +464,7 @@ const bgmGetCommand: CommandSpec = {
 	args: [{ name: "chatMid", description: "Chat MID.", required: true }],
 	examples: ["line chats bgm get cxxxxxxxx"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		const chatMid = context.requireArg(0, "chatMid");
 		return await withClient(context, async ({ client }) => {

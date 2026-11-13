@@ -183,6 +183,7 @@ const showCommand: CommandSpec = {
 	options: [limitOption(100)],
 	examples: ["line messages show cxxxxxxxx 123456789"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		const chatMid = context.requireArg(0, "chatMid");
 		const messageId = context.requireArg(1, "messageId");
@@ -300,6 +301,7 @@ const dataCommand: CommandSpec = {
 	options: dataOptions,
 	examples: ["line messages data cxxxxxxxx 123456789 --out ./photo.jpg"],
 	auth: true,
+	readOnly: true,
 	run: downloadTalkMessageData,
 	format(value) {
 		const result = value as { path: string; size: number; type: string };

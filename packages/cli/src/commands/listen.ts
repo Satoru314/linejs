@@ -36,6 +36,7 @@ const listenCommand: CommandSpec = {
 		"line listen --json --duration 60",
 	],
 	auth: true,
+	readOnly: true,
 	longRunning: true,
 	mcp: false,
 	async run(context) {

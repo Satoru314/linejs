@@ -12,6 +12,7 @@ const getCommand: CommandSpec = {
 	category: "Account",
 	examples: ["line profile get", "line --check-session profile get", "line profile get --json"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		return await withClient(context, async ({ base }) => {
 			if (!base.profile) {

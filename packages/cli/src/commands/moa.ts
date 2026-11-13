@@ -24,6 +24,7 @@ const albumsCommand: CommandSpec = {
 	],
 	examples: ["line moa albums", "line moa albums --json"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		return await withClient(context, async ({ base }) => {
 			return await base.moa.getAlbums({
@@ -91,6 +92,7 @@ const photosCommand: CommandSpec = {
 	],
 	examples: ["line moa photos --chat-id cxxxxxxxx --album-id 123"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		const chatId = context.requireString("chat-id", "Missing --chat-id");
 		const albumId = context.requireString("album-id", "Missing --album-id");
@@ -148,6 +150,7 @@ const downloadCommand: CommandSpec = {
 	],
 	examples: ["line moa download --chat-id cxxxxxxxx --album-id 123 --oid abc --out ./photo.jpg"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		const chatId = context.requireString("chat-id", "Missing --chat-id");
 		const albumId = context.requireString("album-id", "Missing --album-id");

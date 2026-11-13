@@ -11,6 +11,7 @@ import { commandHelp, commandsMetadata, groupHelp, rootHelp } from "./help.ts";
 import { Output } from "./output.ts";
 import { resolveProfileLocation } from "./paths.ts";
 import { allCommands, resolveCommandTokens } from "./registry.ts";
+import { assertReadOnlyCommand, isReadOnlyMode } from "./readonly.ts";
 import { VERSION } from "./version.ts";
 
 export interface RunCliOptions {
@@ -298,6 +299,7 @@ export async function runCli(
 			);
 			return { exitCode: 0 };
 		}
+		assertReadOnlyCommand(command, isReadOnlyMode(env));
 
 		let profile;
 		try {

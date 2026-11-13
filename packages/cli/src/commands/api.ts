@@ -2,6 +2,7 @@ import type { CommandSpec } from "../command.ts";
 import { CliError, UsageError } from "../errors.ts";
 import { readTextInput, writeBinaryFile } from "../files.ts";
 import { formatJson } from "../output.ts";
+import { assertReadOnlyApiCall, isReadOnlyMode } from "../readonly.ts";
 import { withClient, type ConnectedSession } from "../session.ts";
 import { outOption } from "./shared.ts";
 
@@ -52,6 +53,7 @@ const servicesCommand: CommandSpec = {
 	category: "Advanced",
 	examples: ["line api services", "line api services --json"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		return await withClient(context, async ({ base, client }) => {
 			const names = new Set<string>(["client", "base"]);
@@ -98,6 +100,7 @@ const methodsCommand: CommandSpec = {
 	],
 	examples: ["line api methods talk", "line api methods obs"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		const service = context.requireArg(0, "service");
 		return await withClient(context, async (session) => {
@@ -141,9 +144,11 @@ const callCommand: CommandSpec = {
 		`line api call obs downloadObjectForService --args '[{"obsPath":"talk/m/...","oid":"..."}]' --out ./file.bin`,
 	],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		const service = context.requireArg(0, "service");
 		const method = context.requireArg(1, "method");
+		assertReadOnlyApiCall("api call", method, isReadOnlyMode(context.settings.env));
 		const argsOption = context.getString("args");
 		const fileOption = context.getString("args-file");
 		if (argsOption !== undefined && fileOption !== undefined) {

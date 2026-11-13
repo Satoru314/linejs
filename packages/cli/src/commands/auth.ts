@@ -175,6 +175,7 @@ const statusCommand: CommandSpec = {
 	],
 	examples: ["line auth status", "line auth status --verify --json"],
 	auth: false,
+	readOnly: true,
 	async run(context) {
 		const store = await ProfileStore.open(context.settings.profile.path, {
 			name: context.settings.profile.name,
@@ -239,6 +240,7 @@ const tokenCommand: CommandSpec = {
 	category: "Authentication",
 	examples: ["line auth token", "line auth token --json"],
 	auth: false,
+	readOnly: true,
 	async run(context) {
 		const store = await ProfileStore.open(context.settings.profile.path, {
 			name: context.settings.profile.name,
@@ -318,6 +320,7 @@ const profilesCommand: CommandSpec = {
 	category: "Authentication",
 	examples: ["line auth profiles", "line auth profiles --json"],
 	auth: false,
+	readOnly: true,
 	async run(context) {
 		const { home, profiles } = await listProfiles(context.settings.env);
 		return {

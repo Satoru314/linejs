@@ -33,6 +33,7 @@ const listCommand: CommandSpec = {
 	],
 	examples: ["line contacts list", "line contacts list --json"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		return await withClient(context, async ({ client }) => {
 			const users = await client.fetchUsers();
@@ -73,6 +74,7 @@ const getCommand: CommandSpec = {
 	args: [{ name: "mid", description: "User MID (u...).", required: true }],
 	examples: ["line contacts get uxxxxxxxx"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		const mid = context.requireArg(0, "mid");
 		return await withClient(context, async ({ client }) => {
@@ -184,6 +186,7 @@ const searchCommand: CommandSpec = {
 	],
 	examples: ['line contacts search --id "@livecast"', "line contacts search --phone +819012345678"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		const id = context.getString("id");
 		const phone = context.getString("phone");
@@ -312,6 +315,7 @@ const calendarCommand: CommandSpec = {
 		"line contacts calendar uxxxxxxxx --event-kind BIRTHDAY",
 	],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		const mid = context.requireArg(0, "mid");
 		const kinds = context.getArray("event-kind");
@@ -384,6 +388,7 @@ const blockedCommand: CommandSpec = {
 	category: "Contacts",
 	examples: ["line contacts blocked"],
 	auth: true,
+	readOnly: true,
 	async run(context) {
 		return await withClient(context, async ({ base }) => {
 			const mids = await base.talk.getBlockedContactIds();

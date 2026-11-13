@@ -97,6 +97,29 @@ registers the E2EE key material; token-only logins may lack group E2EE keys.
 Run `line commands` or `line commands --json` for the full command list.
 `line help <command>` prints usage, options, and examples.
 
+## Read-only mode
+
+Set `LINEJS_READONLY=1` to deny every command that is not explicitly marked as
+read-only. This is an allowlist: a command without `readOnly: true` in its
+`CommandSpec` is rejected even if it happens to be harmless, so new commands
+stay safe until they are reviewed.
+
+```sh
+LINEJS_READONLY=1 line chats list --json
+LINEJS_READONLY=1 line chats send u... "hello"   # READ_ONLY error
+```
+
+`api call` is allowed only for method names that start with `get` or `fetch`:
+
+```sh
+LINEJS_READONLY=1 line api call talk getMessageBoxes --args '{"messageBoxListRequest":{}}'
+LINEJS_READONLY=1 line api call talk sendMessage --args '{}'   # READ_ONLY error
+```
+
+The MCP server applies the same rule to `execute_linejs_cli`, and
+`list_linejs_cli` reports each command's `readOnly` flag plus an
+`mcpExecutable` value that is `false` for rejected commands.
+
 ## Commands
 
 - **auth**: `login`, `status`, `token`, `logout`, `profiles`
