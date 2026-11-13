@@ -205,7 +205,7 @@ const searchCommand: CommandSpec = {
 	examples: [
 		'line contacts search --id "@livecast"',
 		"line contacts search --phone +819012345678",
-		"line contacts search --id \"@livecast\" --raw",
+		'line contacts search --id "@livecast" --raw',
 	],
 	auth: true,
 	readOnly: true,

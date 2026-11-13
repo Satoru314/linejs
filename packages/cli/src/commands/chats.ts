@@ -103,7 +103,9 @@ export async function fetchRecentChats(client: Client, limit: number): Promise<R
 	});
 	const boxes = response.messageBoxes ?? [];
 	const userMids = boxes.map((box) => box.id).filter(isUserMid);
-	const chatMids = boxes.map((box) => box.id).filter((mid) => mid.startsWith("c") || mid.startsWith("r"));
+	const chatMids = boxes
+		.map((box) => box.id)
+		.filter((mid) => mid.startsWith("c") || mid.startsWith("r"));
 
 	const userProfiles: Map<string, ContactProfile> = userMids.length
 		? await fetchContactProfiles(client, userMids)
@@ -226,9 +228,7 @@ const messagesCommand: CommandSpec = {
 		if (limit <= 0) throw new UsageError("--limit must be positive");
 		return await withClient(context, async ({ client }) => {
 			const history = await fetchTalkHistory(client, chatMid, limit);
-			const messages = history.messages.map((message) =>
-				talkMessageSummary(message, includeRaw),
-			);
+			const messages = history.messages.map((message) => talkMessageSummary(message, includeRaw));
 			if (isUserMid(chatMid)) {
 				return {
 					chat: userChatSummary(chatMid),
