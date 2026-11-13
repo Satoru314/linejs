@@ -214,6 +214,34 @@ test("runCli still runs read-only commands", async () => {
 	}
 });
 
+test("meta commands stay available in read-only mode", async () => {
+	for (const args of [["--version"], ["help"], ["commands"], ["help", "mcp"], ["mcp", "--help"]]) {
+		const captured = output();
+		const result = await runCli(args, captured.options);
+		assert.equal(result.exitCode, 0, args.join(" "));
+	}
+});
+
+test("runCli starts the MCP server in read-only mode", async () => {
+	const { Readable } = await import("node:stream");
+	const originalStdin = Object.getOwnPropertyDescriptor(process, "stdin")!;
+	// The mcp command reads the transport from process.stdin; an ended stream
+	// lets runMcpServer close immediately, like a client that disconnects.
+	Object.defineProperty(process, "stdin", {
+		configurable: true,
+		enumerable: true,
+		value: Readable.from([]),
+	});
+	try {
+		const captured = output();
+		const result = await runCli(["mcp"], captured.options);
+		assert.equal(result.exitCode, 0, captured.stderr.join(""));
+		assert.doesNotMatch(captured.stderr.join(""), /READ_ONLY|is disabled/);
+	} finally {
+		Object.defineProperty(process, "stdin", originalStdin);
+	}
+});
+
 test("MCP execute applies the read-only allowlist", async () => {
 	const received: string[][] = [];
 	const executor = async (args: string[]) => {
@@ -235,16 +263,16 @@ test("MCP execute applies the read-only allowlist", async () => {
 		assert.match(sendResult.content[0]!.text, /READ_ONLY|LINEJS_READONLY/);
 		assert.equal(received.length, 0);
 
-		const list = await mcpCall(
+		const recent = await mcpCall(
 			{
 				id: 2,
 				method: "tools/call",
-				params: { name: EXECUTE_TOOL_NAME, arguments: { args: ["chats", "list"] } },
+				params: { name: EXECUTE_TOOL_NAME, arguments: { args: ["chats", "recent"] } },
 			},
 			{ executor, env },
 		);
-		assert.equal((list.result as { isError?: boolean }).isError, undefined);
-		assert.deepEqual(received[0], ["chats", "list", "--json"]);
+		assert.equal((recent.result as { isError?: boolean }).isError, undefined);
+		assert.deepEqual(received[0], ["chats", "recent", "--json"]);
 
 		const getter = await mcpCall(
 			{

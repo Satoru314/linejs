@@ -85,19 +85,24 @@ export interface CliExecutionResult {
 
 export type CliExecutor = (args: string[]) => Promise<CliExecutionResult>;
 
-export const defaultCliExecutor: CliExecutor = async (args) => {
-	const stdout: string[] = [];
-	const stderr: string[] = [];
-	const result = await runCli(args, {
-		stdout: (chunk) => stdout.push(chunk),
-		stderr: (chunk) => stderr.push(chunk),
-		interactive: false,
-		mcp: true,
-		handleSignals: false,
-		env: { ...process.env, LINEJS_NONINTERACTIVE: "1" },
-	});
-	return { exitCode: result.exitCode, stdout: stdout.join(""), stderr: stderr.join("") };
-};
+/** Build an executor that runs nested CLI commands with the server's environment. */
+export function createCliExecutor(env: NodeJS.ProcessEnv = process.env): CliExecutor {
+	return async (args) => {
+		const stdout: string[] = [];
+		const stderr: string[] = [];
+		const result = await runCli(args, {
+			stdout: (chunk) => stdout.push(chunk),
+			stderr: (chunk) => stderr.push(chunk),
+			interactive: false,
+			mcp: true,
+			handleSignals: false,
+			env: { ...env, LINEJS_NONINTERACTIVE: "1" },
+		});
+		return { exitCode: result.exitCode, stdout: stdout.join(""), stderr: stderr.join("") };
+	};
+}
+
+export const defaultCliExecutor: CliExecutor = createCliExecutor();
 
 function jsonRpcResult(id: string | number | null, result: unknown) {
 	return { jsonrpc: "2.0", id, result };
@@ -301,7 +306,7 @@ export async function handleMcpMessage(
 					id,
 					await executeCommand(
 						argumentsValue,
-						options.executor ?? defaultCliExecutor,
+						options.executor ?? createCliExecutor(options.env ?? process.env),
 						readOnlyMode,
 					),
 				);
@@ -360,8 +365,8 @@ export async function runMcpServer(options: RunMcpServerOptions = {}): Promise<n
 	const output = options.output ?? process.stdout;
 	const error = options.error ?? process.stderr;
 	const commands = options.commands ?? allCommands;
-	const executor = options.executor ?? defaultCliExecutor;
 	const env = options.env ?? process.env;
+	const executor = options.executor ?? createCliExecutor(env);
 	const events =
 		options.events ??
 		new McpEventHub({
@@ -370,6 +375,7 @@ export async function runMcpServer(options: RunMcpServerOptions = {}): Promise<n
 				createLineEventSource({
 					kind,
 					profile: options.profile,
+					env,
 					onExit: (reason) => error.write(`[mcp-events] LINE listener exited: ${reason}\n`),
 				}),
 			log: (message) => error.write(`[mcp-events] ${message}\n`),

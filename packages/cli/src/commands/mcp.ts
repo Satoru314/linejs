@@ -17,6 +17,8 @@ const mcpCommand: CommandSpec = {
 	],
 	examples: ["line mcp"],
 	auth: false,
+	// The server itself only reads state; execute_linejs_cli re-checks every command and API call.
+	readOnly: true,
 	longRunning: true,
 	mcp: false,
 	silent: true,
@@ -29,6 +31,7 @@ const mcpCommand: CommandSpec = {
 			signal: context.signal,
 			principal: `stdio:${context.settings.profile.path}`,
 			profile: context.settings.profile.path,
+			env: context.settings.env,
 		});
 		return { exitCode };
 	},
