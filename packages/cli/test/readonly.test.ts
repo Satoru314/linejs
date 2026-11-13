@@ -101,6 +101,20 @@ test("runCli rejects write commands before loading the profile", async () => {
 	assert.match(parsed.error.message, /LINEJS_READONLY/);
 });
 
+test("runCli rejects non-getter api call methods in read-only mode", async () => {
+	const captured = output();
+	const result = await runCli(
+		["api", "call", "talk", "sendMessage", "--args", "{}", "--json"],
+		captured.options,
+	);
+	assert.equal(result.exitCode, 1);
+	const parsed = JSON.parse(captured.stderr.join(""));
+	assert.equal(parsed.error.code, "READ_ONLY");
+	assert.match(parsed.error.message, /api call/);
+	assert.match(parsed.error.message, /sendMessage/);
+	assert.match(parsed.error.message, /LINEJS_READONLY/);
+});
+
 test("runCli still runs read-only commands", async () => {
 	const dir = await mkdtemp(join(tmpdir(), "linejs-readonly-"));
 	try {

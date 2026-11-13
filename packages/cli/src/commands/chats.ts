@@ -200,7 +200,11 @@ const getCommand: CommandSpec = {
 			`Name:     ${String(chat.name ?? "")}`,
 			`Type:     ${String(chat.type ?? "")}`,
 		];
-		if (Array.isArray(raw.members)) lines.push(`Members:  ${raw.members.length}`);
+		if (Array.isArray(raw.members)) {
+			lines.push(`Members:  ${raw.members.length}`);
+		} else if (chat.memberCount !== undefined) {
+			lines.push(`Members:  ${String(chat.memberCount)}`);
+		}
 		if (Array.isArray(raw.invitees)) lines.push(`Invitees: ${raw.invitees.length}`);
 		return lines.join("\n");
 	},
