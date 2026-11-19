@@ -8,6 +8,7 @@ import type { CommandSpec } from "./command.ts";
 import { CommandContext, type CliSettings } from "./context.ts";
 import { CliError, UsageError, errorMessage, toErrorPayload } from "./errors.ts";
 import { commandHelp, commandsMetadata, groupHelp, rootHelp } from "./help.ts";
+import { resolveLegyEncrypted } from "./legy.ts";
 import { Output } from "./output.ts";
 import { resolveProfileLocation } from "./paths.ts";
 import { allCommands, resolveCommandTokens } from "./registry.ts";
@@ -334,6 +335,13 @@ export async function runCli(
 		const timeout = typeof parsed.options.timeout === "number" ? parsed.options.timeout : undefined;
 		if (timeout !== undefined && timeout <= 0) throw new UsageError("--timeout must be positive");
 
+		const legyEncrypted = resolveLegyEncrypted(
+			typeof parsed.options["legy-encrypted"] === "string"
+				? parsed.options["legy-encrypted"]
+				: undefined,
+			env,
+		);
+
 		const interactive =
 			options.interactive ??
 			(Boolean(process.stdin.isTTY) &&
@@ -372,6 +380,7 @@ export async function runCli(
 					: undefined,
 			endpoint: typeof parsed.options.endpoint === "string" ? parsed.options.endpoint : undefined,
 			timeout,
+			legyEncrypted,
 			verbose,
 			json,
 			interactive,

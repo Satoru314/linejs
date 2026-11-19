@@ -74,7 +74,8 @@ function attachLogging(context: CommandContext, base: BaseClient): void {
 	});
 }
 
-function createBase(
+/** Build the BaseClient for a command, applying the global client settings. */
+export function createBase(
 	context: CommandContext,
 	store: ProfileStore | undefined,
 	storage: BaseStorage,
@@ -85,6 +86,7 @@ function createBase(
 		storage,
 		version: context.settings.appVersion ?? store?.data.appVersion,
 		endpoint: context.settings.endpoint ?? store?.data.endpoint,
+		legy: { encrypted: context.settings.legyEncrypted ?? "auto" },
 	});
 	if (context.settings.timeout !== undefined) {
 		if (context.settings.timeout <= 0) throw new UsageError("--timeout must be positive");

@@ -1,5 +1,6 @@
 import type { ParsedOptions } from "./args.ts";
 import { CliError, UsageError } from "./errors.ts";
+import type { LegyEncryptedMode } from "./legy.ts";
 import type { Output } from "./output.ts";
 import type { ProfileLocation } from "./paths.ts";
 
@@ -9,6 +10,8 @@ export interface CliSettings {
 	appVersion?: string;
 	endpoint?: string;
 	timeout?: number;
+	/** BaseClient `legy.encrypted` override; undefined keeps the library default. */
+	legyEncrypted?: LegyEncryptedMode;
 	verbose: boolean;
 	json: boolean;
 	interactive: boolean;

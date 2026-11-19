@@ -1,4 +1,5 @@
 import { UsageError } from "./errors.ts";
+import { LEGY_ENCRYPTED_MODES } from "./legy.ts";
 
 export type OptionType = "boolean" | "string" | "number" | "array";
 
@@ -65,6 +66,14 @@ export const GLOBAL_OPTIONS: readonly OptionSpec[] = [
 		type: "number",
 		valueName: "ms",
 		description: "Request timeout in milliseconds (default: 30000).",
+	},
+	{
+		name: "legy-encrypted",
+		type: "string",
+		valueName: "mode",
+		choices: LEGY_ENCRYPTED_MODES,
+		description:
+			"LEGY encrypted gateway mode (default: auto). Use off when LINE's encrypted gateway is failing.",
 	},
 	{
 		name: "verbose",
