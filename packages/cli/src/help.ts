@@ -48,9 +48,10 @@ export function rootHelp(commands: readonly CommandSpec[] = allCommands): string
 	lines.push(...optionLines(GLOBAL_OPTIONS));
 	lines.push("");
 	lines.push("Environment:");
-	lines.push("  LINEJS_HOME       Profile directory (default: ~/.linejs)");
-	lines.push("  LINEJS_PROFILE    Default profile name/path when --profile is omitted");
-	lines.push("  NO_COLOR          Disable ANSI colors");
+	lines.push("  LINEJS_HOME            Profile directory (default: ~/.linejs)");
+	lines.push("  LINEJS_PROFILE         Default profile name/path when --profile is omitted");
+	lines.push("  LINEJS_LEGY_ENCRYPTED  LEGY encrypted gateway mode (auto|on|off; default: auto)");
+	lines.push("  NO_COLOR               Disable ANSI colors");
 	lines.push("");
 	lines.push("Run `line help <command>` for details.");
 	return lines.join("\n");

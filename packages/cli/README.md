@@ -61,7 +61,14 @@ Resolution rules:
 
 `LINEJS_HOME` overrides `~/.linejs`, and `LINEJS_PROFILE` sets the default
 profile name/path. Use `--device`, `--app-version`, and `--endpoint` to override
-the emulated client without rewriting the profile.
+the emulated client without rewriting the profile. `LINEJS_LEGY_ENCRYPTED`
+accepts the same values as `--legy-encrypted`; the option takes precedence. The
+MCP server passes its own environment to `execute_linejs_cli`, so starting
+`line mcp` with `LINEJS_LEGY_ENCRYPTED=off` applies to every tool call.
+
+Set `--legy-encrypted off` when LINE's encrypted gateway is failing: requests
+then use the plain LEGY endpoint. There is no automatic fallback, so if the
+chosen mode fails, the command returns that error.
 
 ## Authentication
 
@@ -90,6 +97,7 @@ registers the E2EE key material; token-only logins may lack group E2EE keys.
 | `--app-version <version>` | Emulated LINE app version.                                                                                                                       |
 | `--endpoint <host>`       | LEGY endpoint override.                                                                                                                          |
 | `--timeout <ms>`          | Request timeout (default 30000).                                                                                                                 |
+| `--legy-encrypted <mode>` | LEGY encrypted gateway mode: `auto` (default), `on`, or `off`. Set `off` when LINE's encrypted gateway is failing.                               |
 | `--verbose`, `-v`         | Write LINEJS request logs to stderr.                                                                                                             |
 | `--no-color`              | Disable ANSI colors.                                                                                                                             |
 | `--help`, `-h`            | Command help.                                                                                                                                    |
